@@ -1,0 +1,106 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function profile() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function active() {
+      return signedIn() && profile().data.active == true;
+    }
+
+    function role() {
+      return profile().data.role;
+    }
+
+    function manager() {
+      return active() && role() == "property_manager";
+    }
+
+    function propertyAssigned(propertyId) {
+      return active() && propertyId in profile().data.assignedProperties;
+    }
+
+    function propertyVisible(propertyId) {
+      return manager() || propertyAssigned(propertyId);
+    }
+
+    match /users/{userId} {
+      allow get: if signedIn() && request.auth.uid == userId;
+      allow get: if manager();
+      allow list: if manager();
+      allow create: if signedIn()
+        && request.auth.uid == userId
+        && request.resource.data.role == "technician"
+        && request.resource.data.active == true
+        && request.resource.data.assignedProperties == ["hampton_inn"];
+      allow update: if signedIn()
+        && request.auth.uid == userId
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["name", "email", "updatedAt", "lastSeen"]);
+      allow update: if manager();
+      allow delete: if false;
+    }
+
+    match /properties/{propertyId} {
+      allow get, list: if propertyVisible(resource.data.id);
+      allow create, update: if manager();
+      allow delete: if false;
+    }
+
+    match /rooms/{roomId} {
+      allow read: if propertyVisible(resource.data.propertyId);
+      allow create: if manager() || propertyAssigned(request.resource.data.propertyId);
+      allow update: if manager() || propertyAssigned(resource.data.propertyId);
+      allow delete: if false;
+    }
+
+    match /outOfOrderIssues/{issueId} {
+      allow read: if propertyVisible(resource.data.propertyId);
+      allow create: if manager() || propertyAssigned(request.resource.data.propertyId);
+      allow update: if manager() || propertyAssigned(resource.data.propertyId);
+      allow delete: if false;
+    }
+
+    match /repairLogs/{logId} {
+      allow read: if manager()
+        || propertyAssigned(resource.data.propertyId)
+        || (active() && resource.data.technicianId == request.auth.uid);
+
+      allow create: if active()
+        && request.resource.data.technicianId == request.auth.uid
+        && propertyAssigned(request.resource.data.propertyId)
+        && request.resource.data.approvalStatus == "pending";
+
+      allow update: if manager()
+        || propertyAssigned(resource.data.propertyId)
+        || (
+          active()
+          && resource.data.technicianId == request.auth.uid
+          && resource.data.approvalStatus in ["pending", "rejected", "needs_info"]
+          && request.resource.data.technicianId == resource.data.technicianId
+          && request.resource.data.propertyId == resource.data.propertyId
+          && request.resource.data.approvalStatus == "pending"
+        );
+
+      allow delete: if false;
+    }
+
+    match /scheduledMaintenance/{taskId} {
+      allow read: if propertyVisible(resource.data.propertyId);
+      allow create: if manager() || propertyAssigned(request.resource.data.propertyId);
+      allow update: if manager()
+        || propertyAssigned(resource.data.propertyId)
+        || (
+          active()
+          && propertyAssigned(resource.data.propertyId)
+          && resource.data.assignedTo == request.auth.uid
+        );
+      allow delete: if false;
+    }
+  }
+}

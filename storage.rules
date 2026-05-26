@@ -1,0 +1,45 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function profile() {
+      return firestore.get(/databases/(default)/documents/users/$(request.auth.uid));
+    }
+
+    function active() {
+      return signedIn() && profile().data.active == true;
+    }
+
+    function manager() {
+      return active() && profile().data.role == "property_manager";
+    }
+
+    function propertyAssigned(propertyId) {
+      return active() && propertyId in profile().data.assignedProperties;
+    }
+
+    function propertyVisible(propertyId) {
+      return manager() || propertyAssigned(propertyId);
+    }
+
+    function validImage() {
+      return request.resource != null
+        && request.resource.size < 10 * 1024 * 1024
+        && request.resource.contentType.matches("image/.*");
+    }
+
+    match /repairLogs/{propertyId}/{allPaths=**} {
+      allow read: if propertyVisible(propertyId);
+      allow write: if propertyVisible(propertyId) && validImage();
+    }
+
+    match /scheduledMaintenance/{propertyId}/{allPaths=**} {
+      allow read: if propertyVisible(propertyId);
+      allow write: if propertyVisible(propertyId) && validImage();
+    }
+  }
+}

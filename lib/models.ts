@@ -1,0 +1,144 @@
+import type { Timestamp } from "firebase/firestore";
+
+export type UserRole = "technician" | "property_admin" | "property_manager";
+export type ApprovalStatus = "pending" | "approved" | "rejected" | "needs_info";
+export type IssueStatus = "open" | "monitoring" | "closed";
+export type MaintenanceStatus = "scheduled" | "in_progress" | "completed" | "overdue";
+
+export type AppUser = {
+  id: string;
+  name: string;
+  email: string;
+  role: UserRole;
+  assignedProperties: string[];
+  active: boolean;
+  createdAt?: Timestamp;
+  updatedAt?: Timestamp;
+};
+
+export type Property = {
+  id: string;
+  name: string;
+  address: string;
+  totalRooms: number;
+  active: boolean;
+  createdAt?: Timestamp;
+  updatedAt?: Timestamp;
+};
+
+export type Room = {
+  id: string;
+  propertyId: string;
+  roomNumber: string;
+  status: "available" | "out_of_order" | "inactive";
+  currentIssueId?: string;
+  lastUpdated?: Timestamp;
+};
+
+export type OutOfOrderIssue = {
+  id: string;
+  propertyId: string;
+  roomOrLocation: string;
+  locationType: "room" | "common_area" | "back_of_house" | "exterior";
+  category: string;
+  description: string;
+  status: IssueStatus;
+  openedBy: string;
+  openedByName: string;
+  openedAt?: Timestamp;
+  closedBy?: string;
+  closedByName?: string;
+  closedAt?: Timestamp;
+  linkedRepairLogIds: string[];
+  notes?: string;
+  createdAt?: Timestamp;
+  updatedAt?: Timestamp;
+};
+
+export type RepairLog = {
+  id: string;
+  propertyId: string;
+  roomOrLocation: string;
+  locationType: "room" | "common_area" | "back_of_house" | "exterior";
+  category: string;
+  issueDescription: string;
+  repairExplanation: string;
+  partsUsed: string;
+  technicianId: string;
+  technicianName: string;
+  technicianEmail: string;
+  startTime: string;
+  endTime: string;
+  totalMinutes: number;
+  beforePhotoUrls: string[];
+  afterPhotoUrls: string[];
+  statusAfterRepair: "fixed" | "monitoring" | "out_of_order" | "needs_vendor";
+  approvalStatus: ApprovalStatus;
+  reviewedBy?: string;
+  reviewedByName?: string;
+  reviewedAt?: Timestamp;
+  rejectionReason?: string;
+  adminNotes?: string;
+  submittedAt?: Timestamp;
+  createdAt?: Timestamp;
+  updatedAt?: Timestamp;
+};
+
+export type ScheduledMaintenance = {
+  id: string;
+  propertyId: string;
+  title: string;
+  description: string;
+  category: string;
+  assignedTo: string;
+  assignedToName: string;
+  recurrence: "none" | "daily" | "weekly" | "monthly" | "quarterly" | "annual";
+  dueDate: string;
+  completedBy?: string;
+  completedByName?: string;
+  completedAt?: Timestamp;
+  status: MaintenanceStatus;
+  requiresPhotos: boolean;
+  photoUrls: string[];
+  notes?: string;
+  createdAt?: Timestamp;
+  updatedAt?: Timestamp;
+};
+
+export const seedProperties: Property[] = [
+  {
+    id: "hampton_inn",
+    name: "Hampton Inn",
+    address: "Saint Simons Island, GA",
+    totalRooms: 79,
+    active: true,
+  },
+  {
+    id: "holiday_inn_express",
+    name: "Holiday Inn Express",
+    address: "Brunswick, GA",
+    totalRooms: 60,
+    active: true,
+  },
+  {
+    id: "queens_court_inn",
+    name: "Queens Court Inn",
+    address: "Brunswick, GA",
+    totalRooms: 23,
+    active: true,
+  },
+];
+
+export const categories = [
+  "HVAC",
+  "Plumbing",
+  "Electrical",
+  "Door/Lock",
+  "Furniture",
+  "Appliance",
+  "Pool",
+  "Elevator",
+  "Exterior",
+  "Safety",
+  "Other",
+];
