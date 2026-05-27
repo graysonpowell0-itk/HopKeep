@@ -32,9 +32,16 @@ service firebase.storage {
         && request.resource.contentType.matches("image/.*");
     }
 
+    match /repairLogs/{propertyId}/{userId}/{allPaths=**} {
+      allow read: if propertyVisible(propertyId) || (signedIn() && request.auth.uid == userId);
+      allow write: if signedIn()
+        && request.auth.uid == userId
+        && validImage();
+    }
+
     match /repairLogs/{propertyId}/{allPaths=**} {
       allow read: if propertyVisible(propertyId);
-      allow write: if propertyVisible(propertyId) && validImage();
+      allow write: if manager() && validImage();
     }
 
     match /scheduledMaintenance/{propertyId}/{allPaths=**} {

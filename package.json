@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "seed": "node scripts/seedFirestore.mjs"
+    "seed": "node scripts/seedFirestore.mjs",
+    "test:firebase": "node scripts/firebaseSmokeTest.mjs"
   },
   "dependencies": {
     "firebase": "^12.13.0",

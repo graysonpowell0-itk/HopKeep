@@ -19,6 +19,7 @@ import {
   AlertTriangle,
   CalendarDays,
   Check,
+  ChevronRight,
   ClipboardCheck,
   Clock,
   DoorOpen,
@@ -28,10 +29,12 @@ import {
   ImagePlus,
   LogOut,
   Menu,
+  Moon,
   Plus,
   Search,
   Settings,
   ShieldCheck,
+  Sun,
   UserCog,
   Wrench,
   X,
@@ -64,6 +67,8 @@ type TabKey =
   | "calendar"
   | "properties"
   | "users";
+
+type ThemeMode = "light" | "dark";
 
 const roleLabels: Record<UserRole, string> = {
   technician: "Technician",
@@ -112,7 +117,7 @@ function PrimaryButton({
       type={type}
       onClick={onClick}
       disabled={disabled}
-      className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-[#146b5d] px-4 py-3 text-sm font-black text-white shadow-sm transition hover:bg-[#0f4f46] disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+      className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-[var(--brand)] px-4 py-3 text-sm font-black text-white shadow-sm transition hover:bg-[var(--brand-dark)] disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
     >
       {icon}
       {children}
@@ -138,7 +143,7 @@ function SecondaryButton({
       type={type}
       onClick={onClick}
       disabled={disabled}
-      className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-[#dfe5dc] bg-white px-4 py-2.5 text-sm font-extrabold text-[#17201b] transition hover:bg-[#eef3ef] disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+      className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-[var(--line)] bg-[var(--panel)] px-4 py-2.5 text-sm font-extrabold text-[var(--text)] transition hover:bg-[var(--soft)] disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
     >
       {icon}
       {children}
@@ -160,7 +165,7 @@ function DangerButton({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className="inline-flex min-h-11 w-full items-center justify-center rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-extrabold text-red-800 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+      className="inline-flex min-h-11 w-full items-center justify-center rounded-lg border border-[var(--danger)] bg-[var(--danger-soft)] px-4 py-2.5 text-sm font-extrabold text-[var(--danger)] transition hover:opacity-85 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
     >
       {children}
     </button>
@@ -207,7 +212,7 @@ function propertyScopedQuery(collectionName: string, profile: AppUser, orderFiel
   const base = collection(db, collectionName);
   if (profile.role === "property_manager") return query(base, orderBy(orderField, "desc"));
   if (!profile.assignedProperties.length) return null;
-  return query(base, where("propertyId", "in", profile.assignedProperties), orderBy(orderField, "desc"));
+  return query(base, where("propertyId", "in", profile.assignedProperties));
 }
 
 function propertyName(properties: Property[], propertyId: string) {
@@ -218,18 +223,47 @@ function matchesProperty(selectedProperty: string, propertyId: string) {
   return selectedProperty === "all" || selectedProperty === propertyId;
 }
 
+function timestampValue(value: unknown) {
+  if (value && typeof value === "object" && "toMillis" in value && typeof value.toMillis === "function") {
+    return value.toMillis();
+  }
+  if (typeof value === "string") return Date.parse(value) || 0;
+  return 0;
+}
+
+function useThemeMode() {
+  const [theme, setTheme] = useState<ThemeMode>("light");
+
+  useEffect(() => {
+    const savedTheme = window.localStorage.getItem("hopkeep-theme");
+    const preferredTheme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    setTheme(savedTheme === "dark" || savedTheme === "light" ? savedTheme : preferredTheme);
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    window.localStorage.setItem("hopkeep-theme", theme);
+  }, [theme]);
+
+  return {
+    theme,
+    toggleTheme: () => setTheme((current) => (current === "dark" ? "light" : "dark")),
+  };
+}
+
 export function MaintenanceCommandCenter() {
   const { authUser, profile, loading, error, login, resetPassword, logout } = useAuth();
   const [activeTab, setActiveTab] = useState<TabKey>("dashboard");
   const [selectedProperty, setSelectedProperty] = useState("all");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const { theme, toggleTheme } = useThemeMode();
 
   const propertyQuery = useMemo(() => {
     if (!db || !profile) return null;
     const base = collection(db, "properties");
     if (profile.role === "property_manager") return query(base, orderBy("name"));
     if (!profile.assignedProperties.length) return null;
-    return query(base, where("id", "in", profile.assignedProperties), orderBy("name"));
+    return query(base, where("id", "in", profile.assignedProperties));
   }, [profile]);
 
   const { items: properties, error: propertyError } = useLiveCollection<Property>(() => propertyQuery, [propertyQuery]);
@@ -238,7 +272,7 @@ export function MaintenanceCommandCenter() {
     if (!db || !profile) return null;
     const base = collection(db, "repairLogs");
     if (profile.role === "technician") {
-      return query(base, where("technicianId", "==", profile.id), orderBy("createdAt", "desc"));
+      return query(base, where("technicianId", "==", profile.id));
     }
     return propertyScopedQuery("repairLogs", profile);
   }, [profile]);
@@ -275,59 +309,83 @@ export function MaintenanceCommandCenter() {
     );
   }, [profile]);
 
-  const activeProperties = useMemo(() => properties.filter((property) => property.active !== false), [properties]);
+  const activeProperties = useMemo(
+    () => properties.filter((property) => property.active !== false).sort((a, b) => a.name.localeCompare(b.name)),
+    [properties],
+  );
 
   const visibleRepairLogs = useMemo(
-    () => repairLogs.filter((log) => matchesProperty(selectedProperty, log.propertyId)),
+    () =>
+      repairLogs
+        .filter((log) => matchesProperty(selectedProperty, log.propertyId))
+        .sort((a, b) => timestampValue(b.createdAt) - timestampValue(a.createdAt)),
     [repairLogs, selectedProperty],
   );
   const visibleIssues = useMemo(
-    () => issues.filter((issue) => matchesProperty(selectedProperty, issue.propertyId)),
+    () =>
+      issues
+        .filter((issue) => matchesProperty(selectedProperty, issue.propertyId))
+        .sort((a, b) => timestampValue(b.createdAt) - timestampValue(a.createdAt)),
     [issues, selectedProperty],
   );
   const visibleMaintenance = useMemo(
     () =>
-      scheduledMaintenance.filter((task) => {
-        const propertyMatch = matchesProperty(selectedProperty, task.propertyId);
-        if (profile?.role !== "technician") return propertyMatch;
-        return propertyMatch && (!task.assignedTo || task.assignedTo === profile.id);
-      }),
+      scheduledMaintenance
+        .filter((task) => {
+          const propertyMatch = matchesProperty(selectedProperty, task.propertyId);
+          if (profile?.role !== "technician") return propertyMatch;
+          return propertyMatch && (!task.assignedTo || task.assignedTo === profile.id);
+        })
+        .sort((a, b) => a.dueDate.localeCompare(b.dueDate)),
     [scheduledMaintenance, selectedProperty, profile],
   );
 
   if (loading) {
     return (
-      <main className="flex min-h-screen items-center justify-center px-6">
+      <main className="flex min-h-screen items-center justify-center bg-[var(--background)] px-6" data-theme={theme}>
         <div className="text-center">
-          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-lg bg-[#146b5d] text-white">
+          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-lg bg-[var(--brand)] text-white">
             <Wrench size={28} />
           </div>
-          <p className="text-sm font-bold text-[#66736b]">Loading Maintenance Command Center</p>
+          <p className="text-sm font-bold text-[var(--muted)]">Loading Maintenance Command Center</p>
         </div>
       </main>
     );
   }
 
   if (!authUser || !profile) {
-    return <LoginScreen login={login} resetPassword={resetPassword} authError={error} />;
+    return (
+      <LoginScreen
+        login={login}
+        resetPassword={resetPassword}
+        authError={error}
+        theme={theme}
+        toggleTheme={toggleTheme}
+      />
+    );
   }
 
   const navItems = getNavItems(profile.role);
 
   return (
-    <main className="min-h-screen pb-24 lg:pb-0">
+    <main className="app-shell min-h-screen pb-24 text-[var(--text)] lg:pb-0" data-theme={theme}>
       <div className="lg:flex">
-        <aside className="sticky top-0 hidden h-screen w-72 border-r border-[#dfe5dc] bg-white px-4 py-5 lg:block">
+        <aside className="sticky top-0 hidden h-screen w-72 border-r border-[var(--line)] bg-[var(--panel)] px-4 py-5 lg:block">
+          <AppLogo />
           <BrandBlock profile={profile} />
-          <nav className="mt-6 space-y-1">
+          <nav className="mt-7 space-y-2">
             {navItems.map((item) => (
               <NavButton key={item.key} item={item} active={activeTab === item.key} onClick={() => setActiveTab(item.key)} />
             ))}
           </nav>
+          <div className="absolute bottom-24 left-4 right-4 rounded-lg border border-[var(--line)] bg-[var(--soft)] p-3">
+            <p className="text-xs font-black uppercase tracking-[0.14em] text-[var(--brand)]">Shift status</p>
+            <p className="mt-1 text-sm font-extrabold text-[var(--text)]">Live property records</p>
+          </div>
           <button
             type="button"
             onClick={logout}
-            className="absolute bottom-5 left-4 right-4 inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-[#dfe5dc] bg-white px-4 py-2 text-sm font-extrabold text-[#17201b]"
+            className="absolute bottom-5 left-4 right-4 inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-[var(--line)] bg-[var(--panel)] px-4 py-2 text-sm font-extrabold text-[var(--text)] transition hover:bg-[var(--soft)]"
           >
             <LogOut size={18} />
             Sign out
@@ -335,35 +393,40 @@ export function MaintenanceCommandCenter() {
         </aside>
 
         <section className="min-w-0 flex-1">
-          <header className="sticky top-0 z-20 border-b border-[#dfe5dc] bg-[#f7f8f5]/95 px-4 py-3 backdrop-blur lg:px-8">
+          <header className="sticky top-0 z-20 border-b border-[var(--line)] bg-[var(--background-translucent)] px-4 py-4 backdrop-blur lg:px-8">
             <div className="mx-auto flex max-w-7xl items-center justify-between gap-3">
               <div className="min-w-0">
-                <p className="text-xs font-black uppercase tracking-[0.18em] text-[#146b5d]">Maintenance Command Center</p>
-                <h1 className="truncate text-xl font-black text-[#17201b] sm:text-2xl">
+                <p className="text-xs font-black uppercase tracking-[0.18em] text-[var(--brand)]">Maintenance Command Center</p>
+                <h1 className="truncate text-3xl font-black text-[var(--text)] sm:text-4xl">
                   {navItems.find((item) => item.key === activeTab)?.label ?? "Dashboard"}
                 </h1>
               </div>
-              <div className="hidden items-center gap-3 md:flex">
+              <div className="hidden items-center gap-3 lg:flex">
                 <PropertySelector
                   profile={profile}
                   properties={activeProperties}
                   selectedProperty={selectedProperty}
                   setSelectedProperty={setSelectedProperty}
                 />
-                <span className="rounded-full bg-white px-3 py-2 text-xs font-extrabold text-[#33443b] ring-1 ring-[#dfe5dc]">
+                <ThemeToggle theme={theme} toggleTheme={toggleTheme} />
+                <span className="top-control inline-flex min-h-12 items-center gap-2 rounded-full px-5 py-2 text-sm font-extrabold">
+                  <UserCog size={19} />
                   {roleLabels[profile.role]}
                 </span>
               </div>
-              <button
-                type="button"
-                onClick={() => setMobileMenuOpen((open) => !open)}
-                className="inline-flex h-11 w-11 items-center justify-center rounded-lg border border-[#dfe5dc] bg-white lg:hidden"
-                aria-label="Open menu"
-              >
-                <Menu size={20} />
-              </button>
+              <div className="flex items-center gap-2 lg:hidden">
+                <ThemeToggle theme={theme} toggleTheme={toggleTheme} compact />
+                <button
+                  type="button"
+                  onClick={() => setMobileMenuOpen((open) => !open)}
+                  className="top-control inline-flex h-11 w-11 items-center justify-center rounded-lg"
+                  aria-label="Open menu"
+                >
+                  <Menu size={20} />
+                </button>
+              </div>
             </div>
-            <div className="mx-auto mt-3 max-w-7xl md:hidden">
+            <div className="mx-auto mt-3 max-w-7xl lg:hidden">
               <PropertySelector
                 profile={profile}
                 properties={activeProperties}
@@ -372,7 +435,7 @@ export function MaintenanceCommandCenter() {
               />
             </div>
             {mobileMenuOpen ? (
-              <div className="mt-3 grid gap-2 rounded-lg border border-[#dfe5dc] bg-white p-2 lg:hidden">
+              <div className="mt-3 grid gap-2 rounded-lg border border-[var(--line)] bg-[var(--panel)] p-2 shadow-[var(--shadow)] lg:hidden">
                 {navItems.map((item) => (
                   <NavButton
                     key={item.key}
@@ -391,7 +454,7 @@ export function MaintenanceCommandCenter() {
             ) : null}
           </header>
 
-          <div className="mx-auto max-w-7xl px-4 py-5 lg:px-8">
+          <div className="mx-auto max-w-7xl px-4 py-6 lg:px-8">
             <ErrorStrip errors={[propertyError, repairError, issueError, scheduleError]} />
             {activeTab === "dashboard" ? (
               <Dashboard
@@ -424,7 +487,7 @@ export function MaintenanceCommandCenter() {
         </section>
       </div>
 
-      <nav className="fixed bottom-0 left-0 right-0 z-30 border-t border-[#dfe5dc] bg-white safe-bottom lg:hidden">
+      <nav className="fixed bottom-0 left-0 right-0 z-30 border-t border-[var(--line)] bg-[var(--panel)] safe-bottom lg:hidden">
         <div className="flex overflow-x-auto px-2 pt-2">
           {navItems.map((item) => (
             <button
@@ -432,7 +495,7 @@ export function MaintenanceCommandCenter() {
               type="button"
               onClick={() => setActiveTab(item.key)}
               className={`flex min-w-20 flex-1 flex-col items-center gap-1 rounded-lg px-3 py-2 text-[0.7rem] font-black ${
-                activeTab === item.key ? "bg-[#e1f0ec] text-[#146b5d]" : "text-[#66736b]"
+                activeTab === item.key ? "bg-[var(--brand-soft)] text-[var(--brand)]" : "text-[var(--muted)]"
               }`}
             >
               {item.icon}
@@ -449,10 +512,14 @@ function LoginScreen({
   login,
   resetPassword,
   authError,
+  theme,
+  toggleTheme,
 }: {
   login: (email: string, password: string) => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
   authError: string | null;
+  theme: ThemeMode;
+  toggleTheme: () => void;
 }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -494,32 +561,44 @@ function LoginScreen({
   }
 
   return (
-    <main className="min-h-screen bg-[#f7f8f5] px-4 py-8">
-      <section className="mx-auto flex min-h-[calc(100vh-4rem)] max-w-md flex-col justify-center">
-        <div className="mb-6">
-          <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-lg bg-[#146b5d] text-white">
-            <Wrench size={30} />
+    <main className="min-h-screen bg-[var(--background)] px-4 py-6 text-[var(--text)]" data-theme={theme}>
+      <section className="mx-auto grid min-h-[calc(100vh-3rem)] max-w-6xl items-center gap-8 lg:grid-cols-[1fr_440px]">
+        <div className="max-w-2xl">
+          <div className="mb-8 flex items-center justify-between gap-4">
+            <AppLogo />
+            <ThemeToggle theme={theme} toggleTheme={toggleTheme} />
           </div>
-          <p className="text-sm font-black uppercase tracking-[0.18em] text-[#146b5d]">Hotel maintenance</p>
-          <h1 className="mt-2 text-3xl font-black text-[#17201b]">Maintenance Command Center</h1>
-          <p className="mt-3 text-base font-medium leading-7 text-[#66736b]">
-            Take pictures, explain repair, track room, get approved, keep everyone informed.
+          <p className="text-sm font-black uppercase tracking-[0.18em] text-[var(--brand)]">Hotel maintenance</p>
+          <h1 className="mt-3 text-4xl font-black leading-tight text-[var(--text)] sm:text-5xl">
+            Maintenance command, ready for every shift.
+          </h1>
+          <p className="mt-4 max-w-xl text-base font-medium leading-7 text-[var(--muted)]">
+            Sign in to capture repair photos, submit reports, review hotel status, and keep maintenance records moving.
           </p>
+          <div className="mt-8 grid gap-3 sm:grid-cols-3">
+            <MiniMetric label="Photo logs" value="Upload" />
+            <MiniMetric label="Approvals" value="Track" />
+            <MiniMetric label="Records" value="Live" />
+          </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="card p-4 shadow-sm">
+        <form onSubmit={handleSubmit} className="card p-5 shadow-[var(--shadow-strong)]">
+          <div className="mb-5">
+            <h2 className="text-2xl font-black text-[var(--text)]">Staff sign in</h2>
+            <p className="mt-1 text-sm font-medium text-[var(--muted)]">Use your assigned HopKeep account.</p>
+          </div>
           {!isFirebaseConfigured ? (
-            <div className="mb-4 rounded-lg border border-yellow-300 bg-yellow-50 p-3 text-sm font-bold text-yellow-900">
+            <div className="mb-4 rounded-lg border border-[var(--warning)] bg-[var(--warning-soft)] p-3 text-sm font-bold text-[var(--warning)]">
               Firebase is not configured. Add `.env.local` from `.env.example`.
             </div>
           ) : null}
           {error || authError ? (
-            <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-bold text-red-800">
+            <div className="mb-4 rounded-lg border border-[var(--danger)] bg-[var(--danger-soft)] p-3 text-sm font-bold text-[var(--danger)]">
               {error || authError}
             </div>
           ) : null}
           {message ? (
-            <div className="mb-4 rounded-lg border border-green-200 bg-green-50 p-3 text-sm font-bold text-green-800">
+            <div className="mb-4 rounded-lg border border-[var(--brand)] bg-[var(--brand-soft)] p-3 text-sm font-bold text-[var(--brand)]">
               {message}
             </div>
           ) : null}
@@ -554,7 +633,7 @@ function LoginScreen({
             type="button"
             onClick={handleResetPassword}
             disabled={busy}
-            className="mt-3 min-h-11 w-full rounded-lg text-sm font-extrabold text-[#146b5d] hover:bg-[#e1f0ec] disabled:opacity-60"
+            className="mt-3 min-h-11 w-full rounded-lg text-sm font-extrabold text-[var(--brand)] hover:bg-[var(--brand-soft)] disabled:opacity-60"
           >
             Reset password
           </button>
@@ -564,24 +643,74 @@ function LoginScreen({
   );
 }
 
-function BrandBlock({ profile }: { profile: AppUser }) {
+function AppLogo() {
   return (
-    <div>
-      <div className="flex items-center gap-3">
-        <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-[#146b5d] text-white">
-          <Wrench size={26} />
-        </div>
-        <div className="min-w-0">
-          <p className="truncate text-sm font-black text-[#17201b]">{profile.name}</p>
-          <p className="truncate text-xs font-bold text-[#66736b]">{profile.email}</p>
+    <div className="flex items-center gap-3">
+      <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full border border-[var(--line)] bg-[var(--navy-soft)] text-[var(--navy)] shadow-[var(--shadow)]">
+        <Wrench size={30} />
+      </div>
+      <div>
+        <p className="text-3xl font-black leading-none text-[var(--navy)]">HopKeep</p>
+        <div className="mt-2 flex items-center gap-2">
+          <span className="h-px w-8 bg-[var(--brand)]" />
+          <p className="text-[0.62rem] font-black uppercase tracking-[0.16em] text-[var(--brand)]">Maintenance made simple</p>
+          <span className="h-px w-8 bg-[var(--brand)]" />
         </div>
       </div>
-      <div className="mt-4 rounded-lg bg-[#eef3ef] p-3 text-xs font-extrabold text-[#33443b]">
+    </div>
+  );
+}
+
+function BrandBlock({ profile }: { profile: AppUser }) {
+  return (
+    <div className="sidebar-card mt-8 rounded-lg border border-[var(--line)] bg-[var(--panel)] p-4">
+      <div className="flex items-center gap-3">
+        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[var(--navy)] text-sm font-black text-white">
+          {profile.name
+            .split(" ")
+            .map((part) => part[0])
+            .join("")
+            .slice(0, 2)
+            .toUpperCase()}
+        </div>
+        <div className="min-w-0">
+          <p className="truncate text-sm font-black text-[var(--text)]">{profile.name}</p>
+          <p className="truncate text-xs font-bold text-[var(--muted)]">{profile.email}</p>
+        </div>
+      </div>
+      <div className="mt-4 inline-flex items-center gap-2 rounded-full bg-[var(--brand-soft)] px-3 py-2 text-xs font-extrabold text-[var(--brand)]">
+        <ShieldCheck size={15} />
         {roleLabels[profile.role]}
       </div>
     </div>
   );
 }
+
+function ThemeToggle({
+  theme,
+  toggleTheme,
+  compact,
+}: {
+  theme: ThemeMode;
+  toggleTheme: () => void;
+  compact?: boolean;
+}) {
+  const Icon = theme === "dark" ? Sun : Moon;
+  return (
+    <button
+      type="button"
+      onClick={toggleTheme}
+      className={`top-control inline-flex min-h-11 items-center justify-center gap-2 rounded-lg px-3 text-sm font-extrabold ${
+        compact ? "w-11" : "min-w-28"
+      }`}
+      aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+    >
+      <Icon size={18} />
+      {compact ? null : <span>{theme === "dark" ? "Light" : "Dark"}</span>}
+    </button>
+  );
+}
+
 
 function getNavItems(role: UserRole) {
   const base = [{ key: "dashboard" as TabKey, label: "Dashboard", shortLabel: "Home", icon: <Home size={19} /> }];
@@ -623,8 +752,8 @@ function NavButton({
     <button
       type="button"
       onClick={onClick}
-      className={`flex min-h-11 w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm font-extrabold ${
-        active ? "bg-[#e1f0ec] text-[#146b5d]" : "text-[#33443b] hover:bg-[#f3f6f3]"
+      className={`flex min-h-12 w-full items-center gap-3 rounded-lg px-4 py-2 text-left text-base font-extrabold transition ${
+        active ? "nav-active" : "nav-idle"
       }`}
     >
       {item.icon}
@@ -645,7 +774,11 @@ function PropertySelector({
   setSelectedProperty: (property: string) => void;
 }) {
   return (
-    <select className="field h-11 max-w-full md:w-64" value={selectedProperty} onChange={(event) => setSelectedProperty(event.target.value)}>
+    <select
+      className="top-control h-12 max-w-full rounded-lg px-5 text-sm font-extrabold outline-none md:w-64"
+      value={selectedProperty}
+      onChange={(event) => setSelectedProperty(event.target.value)}
+    >
       {profile.role === "property_manager" ? <option value="all">All hotels</option> : null}
       {properties.map((property) => (
         <option key={property.id} value={property.id}>
@@ -660,7 +793,7 @@ function ErrorStrip({ errors }: { errors: Array<string | null> }) {
   const visibleErrors = errors.filter(Boolean);
   if (!visibleErrors.length) return null;
   return (
-    <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-bold text-red-800">
+    <div className="mb-4 rounded-lg border border-[var(--danger)] bg-[var(--danger-soft)] p-3 text-sm font-bold text-[var(--danger)]">
       {visibleErrors[0]}
     </div>
   );
@@ -691,7 +824,7 @@ function Dashboard({
 
   return (
     <div className="space-y-5">
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         <StatCard label="Pending approval" value={pending} tone="pending" icon={<Clock size={20} />} />
         <StatCard label="Approved today" value={approvedToday} tone="approved" icon={<Check size={20} />} />
         <StatCard label="Needs follow-up" value={rejected} tone="rejected" icon={<AlertTriangle size={20} />} />
@@ -700,7 +833,7 @@ function Dashboard({
       </div>
 
       {profile.role === "technician" ? (
-        <div className="grid gap-3 md:grid-cols-2">
+        <div className="grid gap-4 md:grid-cols-2">
           <QuickAction
             title="New repair log"
             text="Capture before photos, repair notes, parts, time, and outcome."
@@ -715,7 +848,7 @@ function Dashboard({
           />
         </div>
       ) : (
-        <div className="grid gap-3 md:grid-cols-3">
+        <div className="grid gap-4 md:grid-cols-3">
           <QuickAction
             title="Review pending logs"
             text="Approve, reject, or request more info from technicians."
@@ -738,11 +871,12 @@ function Dashboard({
       )}
 
       <section>
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <h2 className="text-lg font-black text-[#17201b]">Hotel Snapshot</h2>
-          <span className="text-xs font-bold text-[#66736b]">{properties.length} visible properties</span>
+        <div className="mb-4 flex items-center gap-4">
+          <h2 className="text-lg font-black text-[var(--text)]">Hotel Snapshot</h2>
+          <span className="horizon-rule hidden sm:block" />
+          <span className="text-xs font-bold text-[var(--muted)]">{properties.length} properties</span>
         </div>
-        <div className="grid gap-3 lg:grid-cols-3">
+        <div className="grid gap-4 mobile-landscape-grid md:grid-cols-2 xl:grid-cols-3">
           {properties.map((property) => {
             const propertyLogs = repairLogs.filter((log) => log.propertyId === property.id);
             const propertyIssues = issues.filter((issue) => issue.propertyId === property.id && issue.status !== "closed");
@@ -750,8 +884,8 @@ function Dashboard({
               <article key={property.id} className="card p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <h3 className="font-black text-[#17201b]">{property.name}</h3>
-                    <p className="text-sm font-medium text-[#66736b]">{property.address}</p>
+                    <h3 className="font-black text-[var(--text)]">{property.name}</h3>
+                    <p className="text-sm font-medium text-[var(--muted)]">{property.address}</p>
                   </div>
                   <Badge tone={property.active ? "approved" : "closed"}>{property.active ? "Active" : "Inactive"}</Badge>
                 </div>
@@ -770,22 +904,26 @@ function Dashboard({
 }
 
 function StatCard({ label, value, tone, icon }: { label: string; value: number; tone: string; icon: ReactNode }) {
+  const iconClass = tone === "approved" ? "metric-icon-green" : tone === "scheduled" ? "metric-icon-blue" : tone === "pending" ? "metric-icon-blue" : tone === "rejected" || tone === "open" ? "metric-icon-red" : "metric-icon-yellow";
   return (
-    <article className="card p-4">
-      <div className="flex items-center justify-between">
-        <span className={`flex h-10 w-10 items-center justify-center rounded-lg ${statusClass(tone)}`}>{icon}</span>
-        <p className="text-3xl font-black text-[#17201b]">{value}</p>
+    <article className="metric-tile grid min-h-32 grid-cols-[4.5rem_1fr_auto] items-center gap-4 rounded-lg p-4">
+      <span className={`flex h-14 w-14 items-center justify-center rounded-full ${iconClass}`}>{icon}</span>
+      <div>
+        <p className="text-base font-black text-[var(--text)]">{label}</p>
+        <p className="mt-2 text-sm font-medium text-[var(--muted)]">
+          {tone === "approved" ? "Logs approved" : tone === "scheduled" ? "Upcoming tasks" : tone === "open" ? "Rooms / locations" : tone === "rejected" ? "Require attention" : "Needs your review"}
+        </p>
       </div>
-      <p className="mt-3 text-sm font-extrabold text-[#66736b]">{label}</p>
+      <p className={`text-4xl font-black ${tone === "approved" ? "text-[var(--brand)]" : tone === "scheduled" ? "text-[var(--blue)]" : tone === "rejected" || tone === "open" ? "text-[var(--danger)]" : "text-[var(--text)]"}`}>{value}</p>
     </article>
   );
 }
 
 function MiniMetric({ label, value }: { label: string; value: string | number }) {
   return (
-    <div className="rounded-lg bg-[#f3f6f3] px-2 py-3">
-      <p className="text-lg font-black text-[#17201b]">{value}</p>
-      <p className="text-[0.7rem] font-black uppercase tracking-wide text-[#66736b]">{label}</p>
+    <div className="rounded-lg bg-[var(--soft)] px-2 py-3">
+      <p className="text-lg font-black text-[var(--text)]">{value}</p>
+      <p className="text-[0.7rem] font-black uppercase tracking-wide text-[var(--muted)]">{label}</p>
     </div>
   );
 }
@@ -802,10 +940,19 @@ function QuickAction({
   onClick: () => void;
 }) {
   return (
-    <button type="button" onClick={onClick} className="card p-4 text-left transition hover:border-[#146b5d] hover:bg-[#fbfdfb]">
-      <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-lg bg-[#e1f0ec] text-[#146b5d]">{icon}</div>
-      <h3 className="font-black text-[#17201b]">{title}</h3>
-      <p className="mt-1 text-sm font-medium leading-6 text-[#66736b]">{text}</p>
+    <button
+      type="button"
+      onClick={onClick}
+      className="card grid min-h-28 grid-cols-[4.5rem_1fr_auto] items-center gap-4 p-4 text-left transition hover:border-[var(--brand)] hover:bg-[var(--panel-hover)]"
+    >
+      <div className="flex h-14 w-14 items-center justify-center rounded-lg bg-[var(--brand-soft)] text-[var(--brand)]">{icon}</div>
+      <div>
+        <h3 className="font-black text-[var(--text)]">{title}</h3>
+        <p className="mt-1 text-sm font-medium leading-6 text-[var(--muted)]">{text}</p>
+      </div>
+      <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--brand)] text-white">
+        <ChevronRight size={18} />
+      </span>
     </button>
   );
 }
@@ -898,7 +1045,7 @@ function RepairForm({ profile, properties }: { profile: AppUser; properties: Pro
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
-      {message ? <div className="rounded-lg border border-[#dfe5dc] bg-white p-3 text-sm font-bold text-[#33443b]">{message}</div> : null}
+      {message ? <div className="rounded-lg border border-[var(--line)] bg-[var(--panel)] p-3 text-sm font-bold text-[var(--text-soft)]">{message}</div> : null}
       <section className="card p-4">
         <SectionTitle title="Repair Location" icon={<Hammer size={20} />} />
         <div className="grid gap-4 md:grid-cols-2">
@@ -965,7 +1112,7 @@ function RepairForm({ profile, properties }: { profile: AppUser; properties: Pro
             <input className="field" type="datetime-local" value={endTime} onChange={(event) => setEndTime(event.target.value)} required />
           </Field>
           <Field label="Total minutes">
-            <input className="field bg-[#f3f6f3] font-black" readOnly value={totalMinutes} />
+            <input className="field bg-[var(--soft)] font-black" readOnly value={totalMinutes} />
           </Field>
           <Field label="Status after repair">
             <select
@@ -1018,8 +1165,8 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 
 function SectionTitle({ title, icon }: { title: string; icon: ReactNode }) {
   return (
-    <div className="mb-4 flex items-center gap-2 text-[#17201b]">
-      <span className="text-[#146b5d]">{icon}</span>
+    <div className="mb-4 flex items-center gap-2 text-[var(--text)]">
+      <span className="text-[var(--brand)]">{icon}</span>
       <h2 className="text-lg font-black">{title}</h2>
     </div>
   );
@@ -1032,7 +1179,7 @@ function MyLogs({ logs, properties }: { logs: RepairLog[]; properties: Property[
   return (
     <section className="space-y-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <h2 className="text-lg font-black text-[#17201b]">My Repair Logs</h2>
+        <h2 className="text-lg font-black text-[var(--text)]">My Repair Logs</h2>
         <select className="field sm:w-56" value={status} onChange={(event) => setStatus(event.target.value as ApprovalStatus | "all")}>
           <option value="all">All statuses</option>
           <option value="pending">Pending</option>
@@ -1064,15 +1211,15 @@ function LogList({
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <h3 className="font-black text-[#17201b]">{log.roomOrLocation}</h3>
+                <h3 className="font-black text-[var(--text)]">{log.roomOrLocation}</h3>
                 <Badge tone={log.approvalStatus}>{approvalLabels[log.approvalStatus]}</Badge>
                 <Badge tone={log.statusAfterRepair}>{log.statusAfterRepair.replaceAll("_", " ")}</Badge>
               </div>
-              <p className="mt-1 text-sm font-bold text-[#66736b]">
+              <p className="mt-1 text-sm font-bold text-[var(--muted)]">
                 {propertyName(properties, log.propertyId)} - {log.category} - {log.totalMinutes} min
               </p>
             </div>
-            <p className="text-xs font-bold text-[#66736b]">{formatShortDate(log.createdAt)}</p>
+            <p className="text-xs font-bold text-[var(--muted)]">{formatShortDate(log.createdAt)}</p>
           </div>
           <div className="mt-4 grid gap-3 md:grid-cols-2">
             <TextBlock label="Issue" text={log.issueDescription} />
@@ -1080,7 +1227,7 @@ function LogList({
           </div>
           {log.partsUsed ? <TextBlock label="Parts used" text={log.partsUsed} /> : null}
           {showReview && (log.adminNotes || log.rejectionReason) ? (
-            <div className="mt-3 rounded-lg border border-yellow-200 bg-yellow-50 p-3 text-sm font-bold text-yellow-900">
+            <div className="mt-3 rounded-lg border border-[var(--warning)] bg-[var(--warning-soft)] p-3 text-sm font-bold text-[var(--warning)]">
               {log.adminNotes || log.rejectionReason}
             </div>
           ) : null}
@@ -1094,8 +1241,8 @@ function LogList({
 function TextBlock({ label, text }: { label: string; text: string }) {
   return (
     <div className="mt-3">
-      <p className="text-xs font-black uppercase tracking-wide text-[#66736b]">{label}</p>
-      <p className="mt-1 whitespace-pre-wrap text-sm font-medium leading-6 text-[#33443b]">{text || "None"}</p>
+      <p className="text-xs font-black uppercase tracking-wide text-[var(--muted)]">{label}</p>
+      <p className="mt-1 whitespace-pre-wrap text-sm font-medium leading-6 text-[var(--text-soft)]">{text || "None"}</p>
     </div>
   );
 }
@@ -1109,7 +1256,7 @@ function PhotoStrip({ before, after }: { before: string[]; after: string[] }) {
   return (
     <div className="mt-4 flex gap-2 overflow-x-auto">
       {photos.map((photo) => (
-        <a key={photo.url} href={photo.url} target="_blank" rel="noreferrer" className="relative h-24 w-24 shrink-0 overflow-hidden rounded-lg border border-[#dfe5dc] bg-[#f3f6f3]">
+        <a key={photo.url} href={photo.url} target="_blank" rel="noreferrer" className="relative h-24 w-24 shrink-0 overflow-hidden rounded-lg border border-[var(--line)] bg-[var(--soft)]">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={photo.url} alt={`${photo.label} repair photo`} className="h-full w-full object-cover" />
           <span className="absolute bottom-1 left-1 rounded bg-black/65 px-1.5 py-0.5 text-[0.65rem] font-black text-white">
@@ -1156,15 +1303,15 @@ function ApprovalQueue({ profile, logs, properties }: { profile: AppUser; logs: 
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
               <div className="flex flex-wrap items-center gap-2">
-                <h3 className="font-black text-[#17201b]">{log.roomOrLocation}</h3>
+                <h3 className="font-black text-[var(--text)]">{log.roomOrLocation}</h3>
                 <Badge tone={log.approvalStatus}>{approvalLabels[log.approvalStatus]}</Badge>
                 <Badge tone={log.statusAfterRepair}>{log.statusAfterRepair.replaceAll("_", " ")}</Badge>
               </div>
-              <p className="mt-1 text-sm font-bold text-[#66736b]">
+              <p className="mt-1 text-sm font-bold text-[var(--muted)]">
                 {propertyName(properties, log.propertyId)} - {log.technicianName} - {log.totalMinutes} min
               </p>
             </div>
-            <p className="text-xs font-bold text-[#66736b]">{formatShortDate(log.createdAt)}</p>
+            <p className="text-xs font-bold text-[var(--muted)]">{formatShortDate(log.createdAt)}</p>
           </div>
           <div className="mt-4 grid gap-3 md:grid-cols-2">
             <TextBlock label="Issue" text={log.issueDescription} />
@@ -1207,8 +1354,8 @@ function DailyLog({ logs, properties }: { logs: RepairLog[]; properties: Propert
       <div className="card p-4">
         <div className="grid gap-3 md:grid-cols-[1fr_220px] md:items-end">
           <div>
-            <h2 className="text-lg font-black text-[#17201b]">Official Daily Maintenance Log</h2>
-            <p className="mt-1 text-sm font-medium text-[#66736b]">Only approved repair logs appear here.</p>
+            <h2 className="text-lg font-black text-[var(--text)]">Official Daily Maintenance Log</h2>
+            <p className="mt-1 text-sm font-medium text-[var(--muted)]">Only approved repair logs appear here.</p>
           </div>
           <Field label="Log date">
             <input className="field" type="date" value={day} onChange={(event) => setDay(event.target.value)} />
@@ -1329,14 +1476,14 @@ function OutOfOrderPanel({
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="font-black text-[#17201b]">{issue.roomOrLocation}</h3>
+                    <h3 className="font-black text-[var(--text)]">{issue.roomOrLocation}</h3>
                     <Badge tone={issue.status}>{issue.status}</Badge>
                   </div>
-                  <p className="mt-1 text-sm font-bold text-[#66736b]">
+                  <p className="mt-1 text-sm font-bold text-[var(--muted)]">
                     {propertyName(properties, issue.propertyId)} - {issue.category} - opened by {issue.openedByName}
                   </p>
                 </div>
-                <p className="text-xs font-bold text-[#66736b]">{formatShortDate(issue.createdAt)}</p>
+                <p className="text-xs font-bold text-[var(--muted)]">{formatShortDate(issue.createdAt)}</p>
               </div>
               <TextBlock label="Description" text={issue.description} />
               {issue.notes ? <TextBlock label="Notes" text={issue.notes} /> : null}
@@ -1484,7 +1631,7 @@ function CalendarPanel({
                 </select>
               </Field>
             </div>
-            <label className="flex items-center gap-3 rounded-lg border border-[#dfe5dc] bg-white p-3 text-sm font-extrabold text-[#33443b]">
+            <label className="flex items-center gap-3 rounded-lg border border-[var(--line)] bg-[var(--panel)] p-3 text-sm font-extrabold text-[var(--text-soft)]">
               <input type="checkbox" checked={requiresPhotos} onChange={(event) => setRequiresPhotos(event.target.checked)} />
               Requires completion photos
             </label>
@@ -1501,7 +1648,7 @@ function CalendarPanel({
             .sort(([a], [b]) => a.localeCompare(b))
             .map(([date, dateTasks]) => (
               <div key={date}>
-                <h3 className="mb-2 text-sm font-black uppercase tracking-wide text-[#66736b]">{formatDateOnly(date)}</h3>
+                <h3 className="mb-2 text-sm font-black uppercase tracking-wide text-[var(--muted)]">{formatDateOnly(date)}</h3>
                 <div className="grid gap-3">
                   {dateTasks.map((task) => (
                     <MaintenanceCard key={task.id} profile={profile} task={task} properties={properties} />
@@ -1587,14 +1734,14 @@ function MaintenanceCard({
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <div className="flex flex-wrap items-center gap-2">
-            <h3 className="font-black text-[#17201b]">{task.title}</h3>
+            <h3 className="font-black text-[var(--text)]">{task.title}</h3>
             <Badge tone={task.status}>{task.status.replaceAll("_", " ")}</Badge>
           </div>
-          <p className="mt-1 text-sm font-bold text-[#66736b]">
+          <p className="mt-1 text-sm font-bold text-[var(--muted)]">
             {propertyName(properties, task.propertyId)} - {task.category} - {task.assignedToName || "Unassigned"}
           </p>
         </div>
-        <p className="text-xs font-bold text-[#66736b]">Due {formatDateOnly(task.dueDate)}</p>
+        <p className="text-xs font-bold text-[var(--muted)]">Due {formatDateOnly(task.dueDate)}</p>
       </div>
       <TextBlock label="Description" text={task.description} />
       {task.status !== "completed" && (profile.role === "technician" || profile.role === "property_manager") ? (
@@ -1725,8 +1872,8 @@ function PropertiesPanel({ properties }: { properties: Property[] }) {
     <section className="space-y-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-lg font-black text-[#17201b]">Properties</h2>
-          <p className="text-sm font-medium text-[#66736b]">Manage hotel records and room counts.</p>
+          <h2 className="text-lg font-black text-[var(--text)]">Properties</h2>
+          <p className="text-sm font-medium text-[var(--muted)]">Manage hotel records and room counts.</p>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row">
           <SecondaryButton onClick={seedDefaults} disabled={busyId === "seed"} icon={<Check size={17} />}>
@@ -1781,7 +1928,7 @@ function PropertiesPanel({ properties }: { properties: Property[] }) {
       <div className="grid gap-3 lg:grid-cols-3">
         {visibleProperties.map((property) => (
           <article key={property.id} className="card p-4">
-            <p className="mb-3 text-xs font-black uppercase tracking-wide text-[#66736b]">{property.id}</p>
+            <p className="mb-3 text-xs font-black uppercase tracking-wide text-[var(--muted)]">{property.id}</p>
             <Field label="Name">
               <input
                 className="field"
@@ -1892,7 +2039,7 @@ function UsersPanel({ users, properties }: { users: AppUser[]; properties: Prope
             <span className="label">Assigned properties</span>
             <div className="grid gap-2">
               {properties.map((property) => (
-                <label key={property.id} className="flex items-center gap-3 rounded-lg border border-[#dfe5dc] bg-white p-3 text-sm font-extrabold">
+                <label key={property.id} className="flex items-center gap-3 rounded-lg border border-[var(--line)] bg-[var(--panel)] p-3 text-sm font-extrabold">
                   <input
                     type="checkbox"
                     checked={role === "property_manager" || assignedProperties.includes(property.id)}
@@ -1915,12 +2062,12 @@ function UsersPanel({ users, properties }: { users: AppUser[]; properties: Prope
           <article key={user.id} className="card p-4">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div>
-                <h3 className="font-black text-[#17201b]">{user.name}</h3>
-                <p className="text-sm font-bold text-[#66736b]">{user.email}</p>
+                <h3 className="font-black text-[var(--text)]">{user.name}</h3>
+                <p className="text-sm font-bold text-[var(--muted)]">{user.email}</p>
               </div>
               <Badge tone={user.active ? "approved" : "closed"}>{roleLabels[user.role]}</Badge>
             </div>
-            <p className="mt-3 text-sm font-medium text-[#33443b]">
+            <p className="mt-3 text-sm font-medium text-[var(--text-soft)]">
               {user.assignedProperties.map((id) => propertyName(properties, id)).join(", ") || "No assigned properties"}
             </p>
           </article>
@@ -1933,11 +2080,11 @@ function UsersPanel({ users, properties }: { users: AppUser[]; properties: Prope
 function EmptyState({ title, text }: { title: string; text: string }) {
   return (
     <div className="card flex min-h-48 flex-col items-center justify-center p-6 text-center">
-      <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-lg bg-[#eef3ef] text-[#146b5d]">
+      <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-lg bg-[var(--soft)] text-[var(--brand)]">
         <Wrench size={24} />
       </div>
-      <h3 className="font-black text-[#17201b]">{title}</h3>
-      <p className="mt-1 max-w-md text-sm font-medium leading-6 text-[#66736b]">{text}</p>
+      <h3 className="font-black text-[var(--text)]">{title}</h3>
+      <p className="mt-1 max-w-md text-sm font-medium leading-6 text-[var(--muted)]">{text}</p>
     </div>
   );
 }
