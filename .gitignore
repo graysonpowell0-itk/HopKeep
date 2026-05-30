@@ -3,6 +3,7 @@ node_modules
 out
 .vercel
 .firebase
+.playwright-cli
 
 .env
 .env*.local

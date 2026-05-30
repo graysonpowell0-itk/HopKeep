@@ -19,9 +19,11 @@ import {
   AlertTriangle,
   CalendarDays,
   Check,
+  ChevronDown,
   ChevronRight,
   ClipboardCheck,
   Clock,
+  Download,
   DoorOpen,
   FileText,
   Hammer,
@@ -66,7 +68,8 @@ type TabKey =
   | "daily-log"
   | "calendar"
   | "properties"
-  | "users";
+  | "users"
+  | "profile";
 
 type ThemeMode = "light" | "dark";
 
@@ -74,6 +77,14 @@ const roleLabels: Record<UserRole, string> = {
   technician: "Technician",
   property_admin: "Property Admin/GM",
   property_manager: "Property Manager",
+  owner: "Owner",
+};
+
+const accountStatusLabels: Record<NonNullable<AppUser["accountStatus"]>, string> = {
+  pending_admin: "Pending admin",
+  pending_owner: "Pending owner",
+  approved: "Approved",
+  rejected: "Rejected",
 };
 
 const approvalLabels: Record<ApprovalStatus, string> = {
@@ -210,7 +221,7 @@ function useLiveCollection<T>(
 function propertyScopedQuery(collectionName: string, profile: AppUser, orderField = "createdAt") {
   if (!db) return null;
   const base = collection(db, collectionName);
-  if (profile.role === "property_manager") return query(base, orderBy(orderField, "desc"));
+  if (profile.role === "property_manager" || profile.role === "owner") return query(base, orderBy(orderField, "desc"));
   if (!profile.assignedProperties.length) return null;
   return query(base, where("propertyId", "in", profile.assignedProperties));
 }
@@ -229,6 +240,74 @@ function timestampValue(value: unknown) {
   }
   if (typeof value === "string") return Date.parse(value) || 0;
   return 0;
+}
+
+function csvCell(value: unknown) {
+  const text = value === null || value === undefined ? "" : String(value);
+  return `"${text.replaceAll('"', '""')}"`;
+}
+
+function downloadCsv(filename: string, rows: Array<Array<unknown>>) {
+  if (!rows.length) return;
+  const csv = rows.map((row) => row.map(csvCell).join(",")).join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function repairLogsCsvRows(logs: RepairLog[], properties: Property[]) {
+  const header = [
+    "Property",
+    "Room or Location",
+    "Location Type",
+    "Category",
+    "Issue Description",
+    "Repair Explanation",
+    "Parts Used",
+    "Technician",
+    "Technician Email",
+    "Start Time",
+    "End Time",
+    "Total Minutes",
+    "Status After Repair",
+    "Approval Status",
+    "Reviewed By",
+    "Admin Notes",
+    "Before Photo URLs",
+    "After Photo URLs",
+    "Created At",
+  ];
+
+  return [
+    header,
+    ...logs.map((log) => [
+      propertyName(properties, log.propertyId),
+      log.roomOrLocation,
+      log.locationType.replaceAll("_", " "),
+      log.category,
+      log.issueDescription,
+      log.repairExplanation,
+      log.partsUsed,
+      log.technicianName,
+      log.technicianEmail,
+      log.startTime,
+      log.endTime,
+      log.totalMinutes,
+      log.statusAfterRepair.replaceAll("_", " "),
+      approvalLabels[log.approvalStatus],
+      log.reviewedByName ?? "",
+      log.adminNotes || log.rejectionReason || "",
+      log.beforePhotoUrls.join(" | "),
+      log.afterPhotoUrls.join(" | "),
+      formatShortDate(log.createdAt),
+    ]),
+  ];
 }
 
 function useThemeMode() {
@@ -252,16 +331,17 @@ function useThemeMode() {
 }
 
 export function MaintenanceCommandCenter() {
-  const { authUser, profile, loading, error, login, resetPassword, logout } = useAuth();
+  const { authUser, profile, loading, error, login, createAccount, resetPassword, logout } = useAuth();
   const [activeTab, setActiveTab] = useState<TabKey>("dashboard");
   const [selectedProperty, setSelectedProperty] = useState("all");
+  const [addPropertyRequest, setAddPropertyRequest] = useState(0);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const { theme, toggleTheme } = useThemeMode();
 
   const propertyQuery = useMemo(() => {
     if (!db || !profile) return null;
     const base = collection(db, "properties");
-    if (profile.role === "property_manager") return query(base, orderBy("name"));
+    if (profile.role === "property_manager" || profile.role === "owner") return query(base, orderBy("name"));
     if (!profile.assignedProperties.length) return null;
     return query(base, where("id", "in", profile.assignedProperties));
   }, [profile]);
@@ -291,14 +371,14 @@ export function MaintenanceCommandCenter() {
   );
 
   const usersQuery = useMemo(() => {
-    if (!db || !profile || profile.role !== "property_manager") return null;
+    if (!db || !profile || !["property_manager", "owner"].includes(profile.role)) return null;
     return query(collection(db, "users"), orderBy("name"));
   }, [profile]);
   const { items: users } = useLiveCollection<AppUser>(() => usersQuery, [usersQuery]);
 
   useEffect(() => {
     if (!profile) return;
-    if (profile.role === "property_manager") {
+    if (profile.role === "property_manager" || profile.role === "owner") {
       setSelectedProperty((current) => current || "all");
       return;
     }
@@ -357,6 +437,7 @@ export function MaintenanceCommandCenter() {
     return (
       <LoginScreen
         login={login}
+        createAccount={createAccount}
         resetPassword={resetPassword}
         authError={error}
         theme={theme}
@@ -372,7 +453,7 @@ export function MaintenanceCommandCenter() {
       <div className="lg:flex">
         <aside className="sticky top-0 hidden h-screen w-72 border-r border-[var(--line)] bg-[var(--panel)] px-4 py-5 lg:block">
           <AppLogo />
-          <BrandBlock profile={profile} />
+          <BrandBlock profile={profile} onOpenProfile={() => setActiveTab("profile")} />
           <nav className="mt-7 space-y-2">
             {navItems.map((item) => (
               <NavButton key={item.key} item={item} active={activeTab === item.key} onClick={() => setActiveTab(item.key)} />
@@ -407,6 +488,10 @@ export function MaintenanceCommandCenter() {
                   properties={activeProperties}
                   selectedProperty={selectedProperty}
                   setSelectedProperty={setSelectedProperty}
+                  onAddProperty={() => {
+                    setActiveTab("properties");
+                    setAddPropertyRequest((request) => request + 1);
+                  }}
                 />
                 <ThemeToggle theme={theme} toggleTheme={toggleTheme} />
                 <span className="top-control inline-flex min-h-12 items-center gap-2 rounded-full px-5 py-2 text-sm font-extrabold">
@@ -432,6 +517,10 @@ export function MaintenanceCommandCenter() {
                 properties={activeProperties}
                 selectedProperty={selectedProperty}
                 setSelectedProperty={setSelectedProperty}
+                onAddProperty={() => {
+                  setActiveTab("properties");
+                  setAddPropertyRequest((request) => request + 1);
+                }}
               />
             </div>
             {mobileMenuOpen ? (
@@ -447,6 +536,15 @@ export function MaintenanceCommandCenter() {
                     }}
                   />
                 ))}
+                <SecondaryButton
+                  icon={<UserCog size={18} />}
+                  onClick={() => {
+                    setActiveTab("profile");
+                    setMobileMenuOpen(false);
+                  }}
+                >
+                  Profile settings
+                </SecondaryButton>
                 <SecondaryButton icon={<LogOut size={18} />} onClick={logout}>
                   Sign out
                 </SecondaryButton>
@@ -481,8 +579,9 @@ export function MaintenanceCommandCenter() {
             {activeTab === "calendar" ? (
               <CalendarPanel profile={profile} properties={activeProperties} tasks={visibleMaintenance} users={users} />
             ) : null}
-            {activeTab === "properties" ? <PropertiesPanel properties={properties} /> : null}
-            {activeTab === "users" ? <UsersPanel users={users} properties={activeProperties} /> : null}
+            {activeTab === "properties" ? <PropertiesPanel properties={properties} addPropertyRequest={addPropertyRequest} /> : null}
+            {activeTab === "users" ? <UsersPanel profile={profile} users={users} properties={activeProperties} /> : null}
+            {activeTab === "profile" ? <ProfileSettings profile={profile} /> : null}
           </div>
         </section>
       </div>
@@ -510,17 +609,27 @@ export function MaintenanceCommandCenter() {
 
 function LoginScreen({
   login,
+  createAccount,
   resetPassword,
   authError,
   theme,
   toggleTheme,
 }: {
   login: (email: string, password: string) => Promise<void>;
+  createAccount: (input: {
+    name: string;
+    email: string;
+    password: string;
+    requestedRole: "technician" | "property_manager";
+  }) => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
   authError: string | null;
   theme: ThemeMode;
   toggleTheme: () => void;
 }) {
+  const [mode, setMode] = useState<"sign-in" | "create">("sign-in");
+  const [name, setName] = useState("");
+  const [requestedRole, setRequestedRole] = useState<"technician" | "property_manager">("technician");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -533,9 +642,23 @@ function LoginScreen({
     setError(null);
     setMessage(null);
     try {
-      await login(email, password);
+      if (mode === "create") {
+        await createAccount({ name, email, password, requestedRole });
+        setName("");
+        setEmail("");
+        setPassword("");
+        setRequestedRole("technician");
+        setMode("sign-in");
+        setMessage(
+          requestedRole === "property_manager"
+            ? "Admin account requested. The owner must approve it before you can sign in."
+            : "Maintenance tech account requested. An admin must approve it before you can sign in.",
+        );
+      } else {
+        await login(email, password);
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to sign in.");
+      setError(err instanceof Error ? err.message : mode === "create" ? "Unable to create account." : "Unable to sign in.");
     } finally {
       setBusy(false);
     }
@@ -565,7 +688,7 @@ function LoginScreen({
       <section className="mx-auto grid min-h-[calc(100vh-3rem)] max-w-6xl items-center gap-8 lg:grid-cols-[1fr_440px]">
         <div className="max-w-2xl">
           <div className="mb-8 flex items-center justify-between gap-4">
-            <AppLogo />
+            <SignInLogo />
             <ThemeToggle theme={theme} toggleTheme={toggleTheme} />
           </div>
           <p className="text-sm font-black uppercase tracking-[0.18em] text-[var(--brand)]">Hotel maintenance</p>
@@ -584,8 +707,42 @@ function LoginScreen({
 
         <form onSubmit={handleSubmit} className="card p-5 shadow-[var(--shadow-strong)]">
           <div className="mb-5">
-            <h2 className="text-2xl font-black text-[var(--text)]">Staff sign in</h2>
-            <p className="mt-1 text-sm font-medium text-[var(--muted)]">Use your assigned HopKeep account.</p>
+            <div className="mb-4 grid grid-cols-2 rounded-lg border border-[var(--line)] bg-[var(--soft)] p-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setMode("sign-in");
+                  setError(null);
+                  setMessage(null);
+                }}
+                className={`min-h-10 rounded-md text-sm font-black ${
+                  mode === "sign-in" ? "bg-[var(--panel)] text-[var(--text)] shadow-[var(--shadow)]" : "text-[var(--muted)]"
+                }`}
+              >
+                Sign in
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setMode("create");
+                  setError(null);
+                  setMessage(null);
+                }}
+                className={`min-h-10 rounded-md text-sm font-black ${
+                  mode === "create" ? "bg-[var(--panel)] text-[var(--text)] shadow-[var(--shadow)]" : "text-[var(--muted)]"
+                }`}
+              >
+                Create account
+              </button>
+            </div>
+            <h2 className="text-2xl font-black text-[var(--text)]">
+              {mode === "create" ? "Create an account" : "Staff sign in"}
+            </h2>
+            <p className="mt-1 text-sm font-medium text-[var(--muted)]">
+              {mode === "create"
+                ? "Choose Admin or Maintenance tech. New accounts stay pending until approved."
+                : "Use your approved HopKeep account."}
+            </p>
           </div>
           {!isFirebaseConfigured ? (
             <div className="mb-4 rounded-lg border border-[var(--warning)] bg-[var(--warning-soft)] p-3 text-sm font-bold text-[var(--warning)]">
@@ -601,6 +758,34 @@ function LoginScreen({
             <div className="mb-4 rounded-lg border border-[var(--brand)] bg-[var(--brand-soft)] p-3 text-sm font-bold text-[var(--brand)]">
               {message}
             </div>
+          ) : null}
+          {mode === "create" ? (
+            <>
+              <label className="label" htmlFor="name">
+                Full name
+              </label>
+              <input
+                id="name"
+                className="field mb-4"
+                type="text"
+                autoComplete="name"
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                required
+              />
+              <label className="label" htmlFor="requested-role">
+                Account type
+              </label>
+              <select
+                id="requested-role"
+                className="field mb-4"
+                value={requestedRole}
+                onChange={(event) => setRequestedRole(event.target.value as "technician" | "property_manager")}
+              >
+                <option value="technician">Maintenance tech</option>
+                <option value="property_manager">Admin</option>
+              </select>
+            </>
           ) : null}
           <label className="label" htmlFor="email">
             Email
@@ -627,16 +812,18 @@ function LoginScreen({
             required
           />
           <PrimaryButton type="submit" disabled={busy} icon={<ShieldCheck size={18} />}>
-            {busy ? "Signing in..." : "Sign in"}
+            {busy ? (mode === "create" ? "Creating..." : "Signing in...") : mode === "create" ? "Request account" : "Sign in"}
           </PrimaryButton>
-          <button
-            type="button"
-            onClick={handleResetPassword}
-            disabled={busy}
-            className="mt-3 min-h-11 w-full rounded-lg text-sm font-extrabold text-[var(--brand)] hover:bg-[var(--brand-soft)] disabled:opacity-60"
-          >
-            Reset password
-          </button>
+          {mode === "sign-in" ? (
+            <button
+              type="button"
+              onClick={handleResetPassword}
+              disabled={busy}
+              className="mt-3 min-h-11 w-full rounded-lg text-sm font-extrabold text-[var(--brand)] hover:bg-[var(--brand-soft)] disabled:opacity-60"
+            >
+              Reset password
+            </button>
+          ) : null}
         </form>
       </section>
     </main>
@@ -645,34 +832,57 @@ function LoginScreen({
 
 function AppLogo() {
   return (
-    <div className="flex items-center gap-3">
-      <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full border border-[var(--line)] bg-[var(--navy-soft)] text-[var(--navy)] shadow-[var(--shadow)]">
-        <Wrench size={30} />
-      </div>
-      <div>
-        <p className="text-3xl font-black leading-none text-[var(--navy)]">HopKeep</p>
-        <div className="mt-2 flex items-center gap-2">
-          <span className="h-px w-8 bg-[var(--brand)]" />
-          <p className="text-[0.62rem] font-black uppercase tracking-[0.16em] text-[var(--brand)]">Maintenance made simple</p>
-          <span className="h-px w-8 bg-[var(--brand)]" />
-        </div>
-      </div>
+    <div className="flex items-center">
+      <HopKeepLogo className="w-[7.5rem] max-w-full" />
     </div>
   );
 }
 
-function BrandBlock({ profile }: { profile: AppUser }) {
+function SignInLogo() {
+  return (
+    <div className="flex items-center">
+      <HopKeepLogo className="w-[6rem] sm:w-[7.5rem]" />
+    </div>
+  );
+}
+
+function HopKeepLogo({ className }: { className: string }) {
+  return (
+    <img
+      src="/brand/hopkeep-logo.png"
+      alt="HopKeep"
+      className={`h-auto rounded-lg shadow-[var(--shadow)] ${className}`}
+    />
+  );
+}
+
+function UserAvatar({ profile, size = "md" }: { profile: AppUser; size?: "md" | "lg" }) {
+  const sizeClass = size === "lg" ? "h-20 w-20 text-lg" : "h-12 w-12 text-sm";
+  const initials = profile.name
+    .split(" ")
+    .map((part) => part[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+
+  return profile.photoUrl ? (
+    <img
+      src={profile.photoUrl}
+      alt={`${profile.name} profile`}
+      className={`${sizeClass} shrink-0 rounded-full border border-[var(--line)] object-cover`}
+    />
+  ) : (
+    <div className={`${sizeClass} flex shrink-0 items-center justify-center rounded-full bg-[var(--navy)] font-black text-white`}>
+      {initials}
+    </div>
+  );
+}
+
+function BrandBlock({ profile, onOpenProfile }: { profile: AppUser; onOpenProfile: () => void }) {
   return (
     <div className="sidebar-card mt-8 rounded-lg border border-[var(--line)] bg-[var(--panel)] p-4">
       <div className="flex items-center gap-3">
-        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[var(--navy)] text-sm font-black text-white">
-          {profile.name
-            .split(" ")
-            .map((part) => part[0])
-            .join("")
-            .slice(0, 2)
-            .toUpperCase()}
-        </div>
+        <UserAvatar profile={profile} />
         <div className="min-w-0">
           <p className="truncate text-sm font-black text-[var(--text)]">{profile.name}</p>
           <p className="truncate text-xs font-bold text-[var(--muted)]">{profile.email}</p>
@@ -682,6 +892,13 @@ function BrandBlock({ profile }: { profile: AppUser }) {
         <ShieldCheck size={15} />
         {roleLabels[profile.role]}
       </div>
+      <button
+        type="button"
+        onClick={onOpenProfile}
+        className="mt-3 min-h-10 w-full rounded-lg border border-[var(--line)] text-sm font-extrabold text-[var(--text)] transition hover:bg-[var(--soft)]"
+      >
+        Profile settings
+      </button>
     </div>
   );
 }
@@ -713,7 +930,10 @@ function ThemeToggle({
 
 
 function getNavItems(role: UserRole) {
-  const base = [{ key: "dashboard" as TabKey, label: "Dashboard", shortLabel: "Home", icon: <Home size={19} /> }];
+  const base = [
+    { key: "dashboard" as TabKey, label: "Dashboard", shortLabel: "Home", icon: <Home size={19} /> },
+    { key: "profile" as TabKey, label: "Profile Settings", shortLabel: "Profile", icon: <UserCog size={19} /> },
+  ];
   if (role === "technician") {
     return [
       ...base,
@@ -729,7 +949,7 @@ function getNavItems(role: UserRole) {
     { key: "daily-log" as TabKey, label: "Daily Log", shortLabel: "Daily", icon: <FileText size={19} /> },
     { key: "calendar" as TabKey, label: "Calendar", shortLabel: "Cal", icon: <CalendarDays size={19} /> },
   ];
-  if (role === "property_manager") {
+  if (role === "property_manager" || role === "owner") {
     return [
       ...admin,
       { key: "properties" as TabKey, label: "Properties", shortLabel: "Hotels", icon: <Settings size={19} /> },
@@ -767,25 +987,88 @@ function PropertySelector({
   properties,
   selectedProperty,
   setSelectedProperty,
+  onAddProperty,
 }: {
   profile: AppUser;
   properties: Property[];
   selectedProperty: string;
   setSelectedProperty: (property: string) => void;
+  onAddProperty: () => void;
 }) {
+  const [open, setOpen] = useState(false);
+  const canManageProperties = profile.role === "property_manager" || profile.role === "owner";
+  const selectedLabel =
+    selectedProperty === "all"
+      ? "All hotels"
+      : properties.find((property) => property.id === selectedProperty)?.name ?? "Select hotel";
+
+  const propertyOptions = canManageProperties ? [{ id: "all", name: "All hotels" }, ...properties] : properties;
+
   return (
-    <select
-      className="top-control h-12 max-w-full rounded-lg px-5 text-sm font-extrabold outline-none md:w-64"
-      value={selectedProperty}
-      onChange={(event) => setSelectedProperty(event.target.value)}
+    <div
+      className="relative max-w-full md:w-64"
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setOpen(false);
+      }}
     >
-      {profile.role === "property_manager" ? <option value="all">All hotels</option> : null}
-      {properties.map((property) => (
-        <option key={property.id} value={property.id}>
-          {property.name}
-        </option>
-      ))}
-    </select>
+      <button
+        type="button"
+        className="top-control flex h-12 w-full items-center justify-between gap-3 rounded-lg px-5 text-left text-sm font-extrabold outline-none"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <span className="truncate">{selectedLabel}</span>
+        <ChevronDown size={18} className={`shrink-0 transition ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open ? (
+        <div
+          className="absolute right-0 top-full z-50 mt-2 max-h-80 w-full min-w-64 overflow-y-auto rounded-lg border border-[var(--line)] bg-[var(--panel)] p-2 shadow-[var(--shadow-strong)]"
+          role="menu"
+        >
+          {propertyOptions.map((property) => (
+            <button
+              key={property.id}
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setSelectedProperty(property.id);
+                setOpen(false);
+              }}
+              className={`flex min-h-10 w-full items-center rounded-lg px-3 text-left text-sm font-extrabold transition hover:bg-[var(--soft)] ${
+                selectedProperty === property.id ? "bg-[var(--brand-soft)] text-[var(--brand)]" : "text-[var(--text)]"
+              }`}
+            >
+              {property.name}
+            </button>
+          ))}
+          {canManageProperties ? (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setOpen(false);
+                onAddProperty();
+              }}
+              className="mt-2 flex min-h-10 w-full items-center gap-2 rounded-lg border border-dashed border-[var(--brand)] px-3 text-left text-sm font-black text-[var(--brand)] transition hover:bg-[var(--brand-soft)]"
+            >
+              <Plus size={17} />
+              Add property
+            </button>
+          ) : (
+            <button
+              type="button"
+              role="menuitem"
+              disabled
+              className="mt-2 flex min-h-10 w-full cursor-not-allowed items-center gap-2 rounded-lg border border-dashed border-[var(--line)] px-3 text-left text-sm font-black text-[var(--muted)] opacity-75"
+            >
+              <Plus size={17} />
+              Add property - admin only
+            </button>
+          )}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -1347,19 +1630,82 @@ function ApprovalQueue({ profile, logs, properties }: { profile: AppUser; logs: 
 
 function DailyLog({ logs, properties }: { logs: RepairLog[]; properties: Property[] }) {
   const [day, setDay] = useState(todayInputValue());
+  const [rangeStart, setRangeStart] = useState(todayInputValue());
+  const [rangeEnd, setRangeEnd] = useState(todayInputValue());
+  const [downloadStatus, setDownloadStatus] = useState<ApprovalStatus | "all">("approved");
   const approved = logs.filter((log) => log.approvalStatus === "approved" && log.endTime.slice(0, 10) === day);
+  const dailyRecords = logs.filter((log) => log.endTime.slice(0, 10) === day);
+  const rangeRecords = logs.filter((log) => {
+    const recordDay = log.endTime.slice(0, 10);
+    const statusMatch = downloadStatus === "all" || log.approvalStatus === downloadStatus;
+    return statusMatch && recordDay >= rangeStart && recordDay <= rangeEnd;
+  });
+
+  function downloadDailyApproved() {
+    downloadCsv(`hopkeep-approved-daily-log-${day}.csv`, repairLogsCsvRows(approved, properties));
+  }
+
+  function downloadDailyRecords() {
+    downloadCsv(`hopkeep-all-records-${day}.csv`, repairLogsCsvRows(dailyRecords, properties));
+  }
+
+  function downloadRangeRecords() {
+    downloadCsv(
+      `hopkeep-records-${rangeStart}-to-${rangeEnd}-${downloadStatus}.csv`,
+      repairLogsCsvRows(rangeRecords, properties),
+    );
+  }
 
   return (
     <section className="space-y-4">
       <div className="card p-4">
-        <div className="grid gap-3 md:grid-cols-[1fr_220px] md:items-end">
+        <div className="grid gap-3 xl:grid-cols-[1fr_220px_auto] xl:items-end">
           <div>
             <h2 className="text-lg font-black text-[var(--text)]">Official Daily Maintenance Log</h2>
-            <p className="mt-1 text-sm font-medium text-[var(--muted)]">Only approved repair logs appear here.</p>
+            <p className="mt-1 text-sm font-medium text-[var(--muted)]">
+              Only approved repair logs appear here. Admins can download the official day or all records for the selected day.
+            </p>
           </div>
           <Field label="Log date">
             <input className="field" type="date" value={day} onChange={(event) => setDay(event.target.value)} />
           </Field>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <SecondaryButton disabled={!approved.length} onClick={downloadDailyApproved} icon={<Download size={17} />}>
+              Download approved
+            </SecondaryButton>
+            <SecondaryButton disabled={!dailyRecords.length} onClick={downloadDailyRecords} icon={<Download size={17} />}>
+              Download all
+            </SecondaryButton>
+          </div>
+        </div>
+      </div>
+
+      <div className="card p-4">
+        <div className="grid gap-3 xl:grid-cols-[1fr_180px_180px_180px_auto] xl:items-end">
+          <div>
+            <h2 className="text-lg font-black text-[var(--text)]">Past Records Export</h2>
+            <p className="mt-1 text-sm font-medium text-[var(--muted)]">
+              Download recorded maintenance data from previous days by date range and approval status.
+            </p>
+          </div>
+          <Field label="Start date">
+            <input className="field" type="date" value={rangeStart} onChange={(event) => setRangeStart(event.target.value)} />
+          </Field>
+          <Field label="End date">
+            <input className="field" type="date" value={rangeEnd} onChange={(event) => setRangeEnd(event.target.value)} />
+          </Field>
+          <Field label="Status">
+            <select className="field" value={downloadStatus} onChange={(event) => setDownloadStatus(event.target.value as ApprovalStatus | "all")}>
+              <option value="approved">Approved</option>
+              <option value="all">All statuses</option>
+              <option value="pending">Pending</option>
+              <option value="needs_info">Needs info</option>
+              <option value="rejected">Rejected</option>
+            </select>
+          </Field>
+          <SecondaryButton disabled={!rangeRecords.length || rangeStart > rangeEnd} onClick={downloadRangeRecords} icon={<Download size={17} />}>
+            Download range
+          </SecondaryButton>
         </div>
       </div>
       <LogList logs={approved} properties={properties} />
@@ -1764,7 +2110,7 @@ function MaintenanceCard({
   );
 }
 
-function PropertiesPanel({ properties }: { properties: Property[] }) {
+function PropertiesPanel({ properties, addPropertyRequest }: { properties: Property[]; addPropertyRequest: number }) {
   const visibleProperties = properties.filter((property) => property.active !== false);
   const [editing, setEditing] = useState<Record<string, Partial<Property>>>({});
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -1774,6 +2120,10 @@ function PropertiesPanel({ properties }: { properties: Property[] }) {
     address: "",
     totalRooms: 0,
   });
+
+  useEffect(() => {
+    if (addPropertyRequest > 0) setIsAdding(true);
+  }, [addPropertyRequest]);
 
   function propertyIdFromName(name: string) {
     const slug = name
@@ -1972,13 +2322,158 @@ function PropertiesPanel({ properties }: { properties: Property[] }) {
   );
 }
 
-function UsersPanel({ users, properties }: { users: AppUser[]; properties: Property[] }) {
+function ProfileSettings({ profile }: { profile: AppUser }) {
+  const [name, setName] = useState(profile.name);
+  const [phone, setPhone] = useState(profile.phone ?? "");
+  const [jobTitle, setJobTitle] = useState(profile.jobTitle ?? "");
+  const [department, setDepartment] = useState(profile.department ?? "");
+  const [bio, setBio] = useState(profile.bio ?? "");
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState(profile.photoUrl ?? "");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    setName(profile.name);
+    setPhone(profile.phone ?? "");
+    setJobTitle(profile.jobTitle ?? "");
+    setDepartment(profile.department ?? "");
+    setBio(profile.bio ?? "");
+    setPreviewUrl(profile.photoUrl ?? "");
+  }, [profile]);
+
+  useEffect(() => {
+    if (!photoFile) return;
+    const objectUrl = URL.createObjectURL(photoFile);
+    setPreviewUrl(objectUrl);
+    return () => URL.revokeObjectURL(objectUrl);
+  }, [photoFile]);
+
+  async function saveProfile(event: FormEvent) {
+    event.preventDefault();
+    if (!db) return;
+    const activeDb = db;
+    setBusy(true);
+    setMessage(null);
+
+    try {
+      let photoUrl = profile.photoUrl ?? "";
+      const activeStorage = storage;
+
+      if (activeStorage && photoFile) {
+        const cleanName = photoFile.name.replace(/[^\w.-]+/g, "_");
+        const imageRef = ref(activeStorage, `profilePhotos/${profile.id}/${Date.now()}-${cleanName}`);
+        await uploadBytes(imageRef, photoFile, { contentType: photoFile.type });
+        photoUrl = await getDownloadURL(imageRef);
+      }
+
+      await updateDoc(doc(activeDb, "users", profile.id), {
+        name: name.trim() || profile.name,
+        phone: phone.trim(),
+        jobTitle: jobTitle.trim(),
+        department: department.trim(),
+        bio: bio.trim(),
+        photoUrl,
+        updatedAt: serverTimestamp(),
+      });
+
+      setPhotoFile(null);
+      setPreviewUrl(photoUrl);
+      setMessage("Profile settings saved.");
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Unable to save profile settings.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const previewProfile = { ...profile, name: name.trim() || profile.name, photoUrl: previewUrl };
+
+  return (
+    <form onSubmit={saveProfile} className="grid gap-5 lg:grid-cols-[320px_1fr]">
+      <section className="card h-fit p-4">
+        <SectionTitle title="Profile Photo" icon={<ImagePlus size={20} />} />
+        <div className="flex flex-col items-center text-center">
+          <UserAvatar profile={previewProfile} size="lg" />
+          <h2 className="mt-4 text-lg font-black text-[var(--text)]">{name || profile.name}</h2>
+          <p className="text-sm font-bold text-[var(--muted)]">{roleLabels[profile.role]}</p>
+        </div>
+        <div className="mt-5">
+          <Field label="Upload profile picture">
+            <input
+              className="field"
+              type="file"
+              accept="image/*"
+              onChange={(event) => setPhotoFile(event.target.files?.[0] ?? null)}
+            />
+          </Field>
+        </div>
+        {photoFile ? <p className="mt-2 text-xs font-bold text-[var(--muted)]">{photoFile.name}</p> : null}
+      </section>
+
+      <section className="card p-4">
+        <SectionTitle title="Profile Settings" icon={<UserCog size={20} />} />
+        {message ? (
+          <div className="mb-4 rounded-lg border border-[var(--line)] bg-[var(--soft)] p-3 text-sm font-bold text-[var(--text-soft)]">
+            {message}
+          </div>
+        ) : null}
+        <div className="grid gap-4 md:grid-cols-2">
+          <Field label="Display name">
+            <input className="field" value={name} onChange={(event) => setName(event.target.value)} required />
+          </Field>
+          <Field label="Phone">
+            <input className="field" type="tel" value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="Optional" />
+          </Field>
+          <Field label="Job title">
+            <input
+              className="field"
+              value={jobTitle}
+              onChange={(event) => setJobTitle(event.target.value)}
+              placeholder="Maintenance lead, GM"
+            />
+          </Field>
+          <Field label="Department">
+            <input
+              className="field"
+              value={department}
+              onChange={(event) => setDepartment(event.target.value)}
+              placeholder="Maintenance, Operations"
+            />
+          </Field>
+          <div className="md:col-span-2">
+            <Field label="About">
+              <textarea
+                className="field min-h-28"
+                value={bio}
+                onChange={(event) => setBio(event.target.value)}
+                placeholder="Optional notes visible to admins and teammates."
+              />
+            </Field>
+          </div>
+        </div>
+        <div className="mt-4 flex justify-end">
+          <PrimaryButton type="submit" disabled={busy || !db} icon={<Check size={17} />}>
+            {busy ? "Saving..." : "Save profile"}
+          </PrimaryButton>
+        </div>
+      </section>
+    </form>
+  );
+}
+
+function UsersPanel({ profile, users, properties }: { profile: AppUser; users: AppUser[]; properties: Property[] }) {
   const [uid, setUid] = useState("");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<UserRole>("technician");
   const [assignedProperties, setAssignedProperties] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+  const [busyUserId, setBusyUserId] = useState<string | null>(null);
+
+  const pendingUsers = users.filter((user) => user.accountStatus?.startsWith("pending") || user.active === false);
+  const approvedUsers = users.filter((user) => user.active !== false && !user.accountStatus?.startsWith("pending"));
+  const canApproveAdmins = profile.role === "owner";
 
   function toggleProperty(propertyId: string) {
     setAssignedProperties((current) =>
@@ -1998,8 +2493,10 @@ function UsersPanel({ users, properties }: { users: AppUser[]; properties: Prope
           name,
           email,
           role,
-          assignedProperties: role === "property_manager" ? properties.map((property) => property.id) : assignedProperties,
+          assignedProperties:
+            role === "property_manager" || role === "owner" ? properties.map((property) => property.id) : assignedProperties,
           active: true,
+          accountStatus: "approved",
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         },
@@ -2011,6 +2508,29 @@ function UsersPanel({ users, properties }: { users: AppUser[]; properties: Prope
       setAssignedProperties([]);
     } finally {
       setBusy(false);
+    }
+  }
+
+  function canApproveUser(user: AppUser) {
+    if (user.role === "property_manager" || user.approvalRequiredBy === "owner") return canApproveAdmins;
+    return profile.role === "property_manager" || profile.role === "owner";
+  }
+
+  async function reviewUser(user: AppUser, approved: boolean) {
+    if (!db || !canApproveUser(user)) return;
+    const activeDb = db;
+    setBusyUserId(user.id);
+    try {
+      await updateDoc(doc(activeDb, "users", user.id), {
+        active: approved,
+        accountStatus: approved ? "approved" : "rejected",
+        approvedBy: approved ? profile.id : "",
+        approvedByName: approved ? profile.name : "",
+        approvedAt: approved ? serverTimestamp() : null,
+        updatedAt: serverTimestamp(),
+      });
+    } finally {
+      setBusyUserId(null);
     }
   }
 
@@ -2033,6 +2553,7 @@ function UsersPanel({ users, properties }: { users: AppUser[]; properties: Prope
               <option value="technician">Technician</option>
               <option value="property_admin">Property Admin/GM</option>
               <option value="property_manager">Property Manager</option>
+              {profile.role === "owner" ? <option value="owner">Owner</option> : null}
             </select>
           </Field>
           <div>
@@ -2042,8 +2563,8 @@ function UsersPanel({ users, properties }: { users: AppUser[]; properties: Prope
                 <label key={property.id} className="flex items-center gap-3 rounded-lg border border-[var(--line)] bg-[var(--panel)] p-3 text-sm font-extrabold">
                   <input
                     type="checkbox"
-                    checked={role === "property_manager" || assignedProperties.includes(property.id)}
-                    disabled={role === "property_manager"}
+                    checked={role === "property_manager" || role === "owner" || assignedProperties.includes(property.id)}
+                    disabled={role === "property_manager" || role === "owner"}
                     onChange={() => toggleProperty(property.id)}
                   />
                   {property.name}
@@ -2058,7 +2579,50 @@ function UsersPanel({ users, properties }: { users: AppUser[]; properties: Prope
       </form>
 
       <section className="grid gap-3">
-        {users.map((user) => (
+        <div className="card p-4">
+          <SectionTitle title="Account Requests" icon={<UserCog size={20} />} />
+          {pendingUsers.length ? (
+            <div className="grid gap-3">
+              {pendingUsers.map((user) => (
+                <article key={user.id} className="rounded-lg border border-[var(--line)] bg-[var(--soft)] p-3">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <h3 className="font-black text-[var(--text)]">{user.name}</h3>
+                      <p className="text-sm font-bold text-[var(--muted)]">{user.email}</p>
+                      <p className="mt-2 text-xs font-black uppercase tracking-wide text-[var(--muted)]">
+                        Requested {user.role === "property_manager" ? "Admin" : roleLabels[user.role]} -{" "}
+                        {accountStatusLabels[user.accountStatus ?? "pending_admin"]}
+                      </p>
+                    </div>
+                    <Badge tone={user.approvalRequiredBy === "owner" ? "pending" : "scheduled"}>
+                      {user.approvalRequiredBy === "owner" ? "Owner approval" : "Admin approval"}
+                    </Badge>
+                  </div>
+                  <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:justify-end">
+                    {canApproveUser(user) ? (
+                      <>
+                        <DangerButton disabled={busyUserId === user.id} onClick={() => reviewUser(user, false)}>
+                          Reject
+                        </DangerButton>
+                        <PrimaryButton disabled={busyUserId === user.id} onClick={() => reviewUser(user, true)} icon={<Check size={17} />}>
+                          Approve
+                        </PrimaryButton>
+                      </>
+                    ) : (
+                      <p className="text-sm font-bold text-[var(--muted)]">
+                        {user.approvalRequiredBy === "owner" ? "Only the owner can approve admin accounts." : "Admin approval required."}
+                      </p>
+                    )}
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm font-medium text-[var(--muted)]">No pending account requests.</p>
+          )}
+        </div>
+
+        {approvedUsers.map((user) => (
           <article key={user.id} className="card p-4">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div>

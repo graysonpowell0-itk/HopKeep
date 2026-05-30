@@ -19,7 +19,11 @@ service cloud.firestore {
     }
 
     function manager() {
-      return active() && role() == "property_manager";
+      return active() && (role() == "property_manager" || role() == "owner");
+    }
+
+    function owner() {
+      return active() && role() == "owner";
     }
 
     function propertyAssigned(propertyId) {
@@ -36,13 +40,39 @@ service cloud.firestore {
       allow list: if manager();
       allow create: if signedIn()
         && request.auth.uid == userId
-        && request.resource.data.role == "technician"
-        && request.resource.data.active == true
-        && request.resource.data.assignedProperties == ["hampton_inn"];
+        && request.resource.data.active == false
+        && request.resource.data.role in ["technician", "property_manager"]
+        && request.resource.data.requestedRole == request.resource.data.role
+        && (
+          (
+            request.resource.data.role == "technician"
+            && request.resource.data.accountStatus == "pending_admin"
+            && request.resource.data.approvalRequiredBy == "admin"
+            && request.resource.data.assignedProperties == ["hampton_inn"]
+          )
+          || (
+            request.resource.data.role == "property_manager"
+            && request.resource.data.accountStatus == "pending_owner"
+            && request.resource.data.approvalRequiredBy == "owner"
+          )
+        );
       allow update: if signedIn()
         && request.auth.uid == userId
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["name", "email", "updatedAt", "lastSeen"]);
-      allow update: if manager();
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "name",
+          "email",
+          "phone",
+          "jobTitle",
+          "department",
+          "bio",
+          "photoUrl",
+          "updatedAt",
+          "lastSeen"
+        ]);
+      allow update: if owner();
+      allow update: if manager()
+        && resource.data.role in ["technician", "property_admin"]
+        && request.resource.data.role in ["technician", "property_admin"];
       allow delete: if false;
     }
 

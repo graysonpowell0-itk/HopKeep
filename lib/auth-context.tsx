@@ -1,10 +1,12 @@
 "use client";
 
 import {
+  createUserWithEmailAndPassword,
   onAuthStateChanged,
   sendPasswordResetEmail,
   signInWithEmailAndPassword,
   signOut,
+  updateProfile,
   type User,
 } from "firebase/auth";
 import { doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
@@ -19,8 +21,16 @@ type AuthContextValue = {
   loading: boolean;
   error: string | null;
   login: (email: string, password: string) => Promise<void>;
+  createAccount: (input: CreateAccountInput) => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
   logout: () => Promise<void>;
+};
+
+export type CreateAccountInput = {
+  name: string;
+  email: string;
+  password: string;
+  requestedRole: "technician" | "property_manager";
 };
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -31,13 +41,17 @@ function readableAuthError(error: unknown) {
   if (message.includes("auth/user-not-found")) return "No account exists for that email.";
   if (message.includes("auth/user-disabled")) return "This account is disabled.";
   if (message.includes("auth/too-many-requests")) return "Too many attempts. Try again shortly.";
+  if (message.includes("auth/email-already-in-use")) return "An account already exists for that email.";
+  if (message.includes("auth/weak-password")) return "Use a stronger password with at least 6 characters.";
   return message;
 }
 
 function normalizeProfile(user: User, raw: Record<string, unknown>, id: string): AppUser {
   const legacyRole = String(raw.role ?? "").toLowerCase();
   const role =
-    raw.role === "property_manager" || legacyRole === "admin" || legacyRole === "manager"
+    raw.role === "owner" || legacyRole === "owner"
+      ? "owner"
+      : raw.role === "property_manager" || legacyRole === "admin" || legacyRole === "manager"
       ? "property_manager"
       : raw.role === "property_admin"
         ? "property_admin"
@@ -46,11 +60,21 @@ function normalizeProfile(user: User, raw: Record<string, unknown>, id: string):
   const rawAssigned = Array.isArray(raw.assignedProperties) ? raw.assignedProperties.filter((item) => typeof item === "string") : [];
   const legacyProperty = typeof raw.propertyId === "string" ? [raw.propertyId] : [];
   const assignedProperties =
-    role === "property_manager"
+    role === "property_manager" || role === "owner"
       ? ["hampton_inn", "holiday_inn_express", "queens_court_inn"]
       : rawAssigned.length
         ? rawAssigned
         : legacyProperty;
+
+  const accountStatus =
+    raw.accountStatus === "pending_admin" ||
+    raw.accountStatus === "pending_owner" ||
+    raw.accountStatus === "approved" ||
+    raw.accountStatus === "rejected"
+      ? raw.accountStatus
+      : raw.active === false
+        ? "pending_admin"
+        : "approved";
 
   return {
     id,
@@ -63,10 +87,31 @@ function normalizeProfile(user: User, raw: Record<string, unknown>, id: string):
     email: typeof raw.email === "string" && raw.email ? raw.email : user.email || "",
     role,
     assignedProperties,
-    active: raw.active !== false && raw.accountStatus !== "rejected",
+    active: raw.active !== false && accountStatus === "approved",
+    accountStatus,
+    requestedRole: raw.requestedRole as AppUser["requestedRole"],
+    approvalRequiredBy: raw.approvalRequiredBy as AppUser["approvalRequiredBy"],
+    approvedBy: raw.approvedBy as AppUser["approvedBy"],
+    approvedByName: raw.approvedByName as AppUser["approvedByName"],
+    approvedAt: raw.approvedAt as AppUser["approvedAt"],
+    photoUrl: typeof raw.photoUrl === "string" ? raw.photoUrl : "",
+    phone: typeof raw.phone === "string" ? raw.phone : "",
+    jobTitle: typeof raw.jobTitle === "string" ? raw.jobTitle : "",
+    department: typeof raw.department === "string" ? raw.department : "",
+    bio: typeof raw.bio === "string" ? raw.bio : "",
     createdAt: raw.createdAt as AppUser["createdAt"],
     updatedAt: raw.updatedAt as AppUser["updatedAt"],
   };
+}
+
+function pendingAccountMessage(profile: AppUser) {
+  if (profile.accountStatus === "rejected") {
+    return "This account request was rejected. Contact a HopKeep administrator for help.";
+  }
+  if (profile.approvalRequiredBy === "owner" || profile.accountStatus === "pending_owner") {
+    return "Your admin account request is pending owner approval.";
+  }
+  return "Your maintenance tech account request is pending admin approval.";
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -82,8 +127,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     const activeDb = db;
+    const startupTimer = window.setTimeout(() => {
+      setLoading(false);
+      setError("Startup took too long. Check your network connection and refresh the app.");
+    }, 12000);
 
-    return onAuthStateChanged(auth, async (user) => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      window.clearTimeout(startupTimer);
       setLoading(true);
       setError(null);
       setAuthUser(user);
@@ -97,32 +147,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         const snapshot = await getDoc(doc(activeDb, "users", user.uid));
         if (!snapshot.exists()) {
-          const fallbackProfile: AppUser = {
-            id: user.uid,
-            name: user.displayName || user.email?.split("@")[0] || "User",
-            email: user.email || "",
-            role: "technician",
-            assignedProperties: ["hampton_inn"],
-            active: true,
-          };
-
-          await setDoc(
-            doc(activeDb, "users", user.uid),
-            {
-              ...fallbackProfile,
-              createdAt: serverTimestamp(),
-              updatedAt: serverTimestamp(),
-            },
-            { merge: true },
-          );
-          setProfile(fallbackProfile);
+          setProfile(null);
+          setError("No staff profile exists for this account. Use Create account to request access.");
+          setLoading(false);
           return;
         }
 
         const data = normalizeProfile(user, snapshot.data(), snapshot.id);
         if (data.active === false) {
           setProfile(null);
-          setError("This user profile is inactive.");
+          setError(pendingAccountMessage(data));
+          setLoading(false);
           return;
         }
 
@@ -142,6 +177,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 role: data.role,
                 assignedProperties: data.assignedProperties,
                 active: data.active,
+                accountStatus: data.accountStatus,
                 updatedAt: serverTimestamp(),
               },
               { merge: true },
@@ -158,6 +194,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setLoading(false);
       }
     });
+
+    return () => {
+      window.clearTimeout(startupTimer);
+      unsubscribe();
+    };
   }, []);
 
   const value = useMemo<AuthContextValue>(
@@ -173,6 +214,43 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setError(null);
         try {
           await signInWithEmailAndPassword(auth, email.trim(), password);
+        } catch (err) {
+          const message = readableAuthError(err);
+          setError(message);
+          throw new Error(message);
+        }
+      },
+      async createAccount(input) {
+        if (!isFirebaseConfigured || !auth || !db) {
+          throw new Error("Firebase is not configured. Add the NEXT_PUBLIC_FIREBASE_* env vars.");
+        }
+
+        setError(null);
+        const email = input.email.trim();
+        const name = input.name.trim();
+        const requestedRole = input.requestedRole;
+        const accountStatus = requestedRole === "property_manager" ? "pending_owner" : "pending_admin";
+        const approvalRequiredBy = requestedRole === "property_manager" ? "owner" : "admin";
+
+        try {
+          const credential = await createUserWithEmailAndPassword(auth, email, input.password);
+          if (name) await updateProfile(credential.user, { displayName: name });
+          await setDoc(doc(db, "users", credential.user.uid), {
+            name: name || email.split("@")[0],
+            email,
+            role: requestedRole,
+            requestedRole,
+            assignedProperties:
+              requestedRole === "property_manager"
+                ? ["hampton_inn", "holiday_inn_express", "queens_court_inn"]
+                : ["hampton_inn"],
+            active: false,
+            accountStatus,
+            approvalRequiredBy,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          });
+          await signOut(auth);
         } catch (err) {
           const message = readableAuthError(err);
           setError(message);

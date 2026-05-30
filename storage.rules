@@ -15,7 +15,7 @@ service firebase.storage {
     }
 
     function manager() {
-      return active() && profile().data.role == "property_manager";
+      return active() && (profile().data.role == "property_manager" || profile().data.role == "owner");
     }
 
     function propertyAssigned(propertyId) {
@@ -42,6 +42,13 @@ service firebase.storage {
     match /repairLogs/{propertyId}/{allPaths=**} {
       allow read: if propertyVisible(propertyId);
       allow write: if manager() && validImage();
+    }
+
+    match /profilePhotos/{userId}/{allPaths=**} {
+      allow read: if signedIn();
+      allow write: if signedIn()
+        && request.auth.uid == userId
+        && validImage();
     }
 
     match /scheduledMaintenance/{propertyId}/{allPaths=**} {
