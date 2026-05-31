@@ -928,17 +928,19 @@ function LoginScreen({
     <main className="min-h-screen bg-[var(--background)] px-4 py-6 text-[var(--text)]" data-theme={theme}>
       <section className="mx-auto grid min-h-[calc(100vh-3rem)] max-w-6xl items-center gap-8 lg:grid-cols-[1fr_440px]">
         <div className="max-w-2xl">
-          <div className="mb-8 flex items-center justify-between gap-4">
-            <SignInLogo />
+          <div className="mb-6 flex justify-end">
             <ThemeToggle theme={theme} toggleTheme={toggleTheme} />
           </div>
-          <p className="text-sm font-black uppercase tracking-[0.18em] text-[var(--brand)]">Hotel maintenance</p>
-          <h1 className="mt-3 text-4xl font-black leading-tight text-[var(--text)] sm:text-5xl">
-            Maintenance command, ready for every shift.
-          </h1>
-          <p className="mt-4 max-w-xl text-base font-medium leading-7 text-[var(--muted)]">
-            Sign in to capture repair photos, submit reports, review hotel status, and keep maintenance records moving.
-          </p>
+          <div className="flex flex-col items-center text-center lg:items-start lg:text-left">
+            <SignInLogo />
+            <p className="mt-6 text-sm font-black uppercase tracking-[0.18em] text-[var(--brand)]">Hotel maintenance</p>
+            <h1 className="mt-3 text-4xl font-black leading-tight text-[var(--text)] sm:text-5xl">
+              Maintenance command, ready for every shift.
+            </h1>
+            <p className="mt-4 max-w-xl text-base font-medium leading-7 text-[var(--muted)]">
+              Sign in to capture repair photos, submit reports, review hotel status, and keep maintenance records moving.
+            </p>
+          </div>
           <div className="mt-8 grid gap-3 sm:grid-cols-3">
             <MiniMetric label="Photo logs" value="Upload" />
             <MiniMetric label="Approvals" value="Track" />
@@ -1081,8 +1083,12 @@ function AppLogo() {
 
 function SignInLogo() {
   return (
-    <div className="flex items-center">
-      <HopKeepLogo className="w-[6rem] sm:w-[7.5rem]" />
+    <div className="flex w-full justify-center lg:justify-start">
+      <img
+        src="/brand/hopkeep-login-logo.png"
+        alt="HopKeep maintenance made simple"
+        className="h-auto w-full max-w-[18rem] rounded-lg object-contain shadow-[var(--shadow)] sm:max-w-[21rem]"
+      />
     </div>
   );
 }
