@@ -1076,7 +1076,7 @@ function LoginScreen({
 function AppLogo() {
   return (
     <div className="flex items-center">
-      <HopKeepLogo className="w-[7.5rem] max-w-full" />
+      <HopKeepLogo className="w-[6.75rem] max-w-full" />
     </div>
   );
 }
@@ -1087,7 +1087,7 @@ function SignInLogo() {
       <img
         src="/brand/hopkeep-login-logo.png"
         alt="HopKeep maintenance made simple"
-        className="h-auto w-full max-w-[18rem] rounded-lg object-contain shadow-[var(--shadow)] sm:max-w-[21rem]"
+        className="h-auto w-full max-w-[16.2rem] rounded-lg object-contain shadow-[var(--shadow)] sm:max-w-[18.9rem]"
       />
     </div>
   );
