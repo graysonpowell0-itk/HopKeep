@@ -13,6 +13,7 @@ import {
   where,
   type DocumentData,
   type Query,
+  type Timestamp,
 } from "firebase/firestore";
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import {
@@ -93,6 +94,214 @@ const approvalLabels: Record<ApprovalStatus, string> = {
   rejected: "Rejected",
   needs_info: "Needs info",
 };
+
+function previewTimestamp(isoDate: string) {
+  const millis = Date.parse(isoDate);
+  return {
+    toMillis: () => millis,
+    toDate: () => new Date(millis),
+  } as unknown as Timestamp;
+}
+
+const previewAdminProfile: AppUser = {
+  id: "preview-admin",
+  name: "Morgan Ellis",
+  email: "morgan@hopkeep.local",
+  role: "property_manager",
+  assignedProperties: seedProperties.map((property) => property.id),
+  active: true,
+  accountStatus: "approved",
+  jobTitle: "Regional Maintenance Manager",
+  department: "Operations",
+};
+
+const previewUsers: AppUser[] = [
+  previewAdminProfile,
+  {
+    id: "preview-tech-1",
+    name: "Avery Daniels",
+    email: "avery@hopkeep.local",
+    role: "technician",
+    assignedProperties: ["hampton_inn", "holiday_inn_express"],
+    active: true,
+    accountStatus: "approved",
+  },
+  {
+    id: "preview-tech-2",
+    name: "Blake Rivera",
+    email: "blake@hopkeep.local",
+    role: "technician",
+    assignedProperties: ["queens_court_inn"],
+    active: true,
+    accountStatus: "approved",
+  },
+  {
+    id: "preview-pending",
+    name: "Casey Monroe",
+    email: "casey@hopkeep.local",
+    role: "technician",
+    requestedRole: "technician",
+    assignedProperties: ["hampton_inn"],
+    active: false,
+    accountStatus: "pending_admin",
+    approvalRequiredBy: "admin",
+  },
+];
+
+const previewRepairLogs: RepairLog[] = [
+  {
+    id: "preview-log-1",
+    propertyId: "hampton_inn",
+    roomOrLocation: "214",
+    locationType: "room",
+    category: "HVAC",
+    issueDescription: "PTAC was blowing warm air and guest reported intermittent rattling.",
+    repairExplanation: "Cleaned intake filter, reset breaker, and verified cold air at the unit.",
+    partsUsed: "Reusable filter cleaned",
+    technicianId: "preview-tech-1",
+    technicianName: "Avery Daniels",
+    technicianEmail: "avery@hopkeep.local",
+    startTime: "2026-05-29T08:15",
+    endTime: "2026-05-29T09:05",
+    totalMinutes: 50,
+    beforePhotoUrls: [],
+    afterPhotoUrls: [],
+    statusAfterRepair: "fixed",
+    approvalStatus: "pending",
+    submittedAt: previewTimestamp("2026-05-29T09:10"),
+    createdAt: previewTimestamp("2026-05-29T09:10"),
+  },
+  {
+    id: "preview-log-2",
+    propertyId: "holiday_inn_express",
+    roomOrLocation: "Pool equipment room",
+    locationType: "back_of_house",
+    category: "Pool",
+    issueDescription: "Pump pressure was high during morning rounds.",
+    repairExplanation: "Backwashed filter and logged pressure return to normal range.",
+    partsUsed: "None",
+    technicianId: "preview-tech-1",
+    technicianName: "Avery Daniels",
+    technicianEmail: "avery@hopkeep.local",
+    startTime: "2026-05-28T10:00",
+    endTime: "2026-05-28T10:35",
+    totalMinutes: 35,
+    beforePhotoUrls: [],
+    afterPhotoUrls: [],
+    statusAfterRepair: "monitoring",
+    approvalStatus: "approved",
+    reviewedBy: "preview-admin",
+    reviewedByName: "Morgan Ellis",
+    reviewedAt: previewTimestamp("2026-05-28T11:10"),
+    adminNotes: "Continue checking pressure during afternoon rounds.",
+    submittedAt: previewTimestamp("2026-05-28T10:40"),
+    createdAt: previewTimestamp("2026-05-28T10:40"),
+  },
+  {
+    id: "preview-log-3",
+    propertyId: "queens_court_inn",
+    roomOrLocation: "Lobby restroom",
+    locationType: "common_area",
+    category: "Plumbing",
+    issueDescription: "Sink drain running slow.",
+    repairExplanation: "Cleared trap but water flow still needs follow-up.",
+    partsUsed: "Drain auger",
+    technicianId: "preview-tech-2",
+    technicianName: "Blake Rivera",
+    technicianEmail: "blake@hopkeep.local",
+    startTime: "2026-05-27T14:20",
+    endTime: "2026-05-27T14:55",
+    totalMinutes: 35,
+    beforePhotoUrls: [],
+    afterPhotoUrls: [],
+    statusAfterRepair: "needs_vendor",
+    approvalStatus: "needs_info",
+    reviewedBy: "preview-admin",
+    reviewedByName: "Morgan Ellis",
+    reviewedAt: previewTimestamp("2026-05-27T15:30"),
+    adminNotes: "Add vendor recommendation before approval.",
+    submittedAt: previewTimestamp("2026-05-27T15:00"),
+    createdAt: previewTimestamp("2026-05-27T15:00"),
+  },
+];
+
+const previewIssues: OutOfOrderIssue[] = [
+  {
+    id: "preview-issue-1",
+    propertyId: "hampton_inn",
+    roomOrLocation: "318",
+    locationType: "room",
+    category: "Door/Lock",
+    description: "Door latch does not catch consistently.",
+    status: "open",
+    openedBy: "preview-tech-1",
+    openedByName: "Avery Daniels",
+    openedAt: previewTimestamp("2026-05-29T07:45"),
+    linkedRepairLogIds: [],
+    notes: "Room held until latch is replaced.",
+    createdAt: previewTimestamp("2026-05-29T07:45"),
+  },
+  {
+    id: "preview-issue-2",
+    propertyId: "holiday_inn_express",
+    roomOrLocation: "Fitness center",
+    locationType: "common_area",
+    category: "Electrical",
+    description: "Treadmill outlet trips GFCI after several minutes.",
+    status: "monitoring",
+    openedBy: "preview-admin",
+    openedByName: "Morgan Ellis",
+    openedAt: previewTimestamp("2026-05-28T12:20"),
+    linkedRepairLogIds: ["preview-log-2"],
+    notes: "Electrician scheduled for inspection.",
+    createdAt: previewTimestamp("2026-05-28T12:20"),
+  },
+];
+
+const previewMaintenance: ScheduledMaintenance[] = [
+  {
+    id: "preview-task-1",
+    propertyId: "hampton_inn",
+    title: "Emergency light test",
+    description: "Monthly test for corridors and stairwells.",
+    category: "Safety",
+    assignedTo: "preview-tech-1",
+    assignedToName: "Avery Daniels",
+    recurrence: "monthly",
+    dueDate: "2026-05-30",
+    status: "scheduled",
+    requiresPhotos: false,
+    photoUrls: [],
+    createdAt: previewTimestamp("2026-05-20T09:00"),
+  },
+  {
+    id: "preview-task-2",
+    propertyId: "queens_court_inn",
+    title: "Quarterly HVAC filter change",
+    description: "Replace filters in guest rooms and common areas.",
+    category: "HVAC",
+    assignedTo: "preview-tech-2",
+    assignedToName: "Blake Rivera",
+    recurrence: "quarterly",
+    dueDate: "2026-06-03",
+    status: "in_progress",
+    requiresPhotos: true,
+    photoUrls: [],
+    createdAt: previewTimestamp("2026-05-18T09:00"),
+  },
+];
+
+function useAdminPreviewMode() {
+  const [enabled, setEnabled] = useState(false);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const isLocalhost = ["localhost", "127.0.0.1"].includes(window.location.hostname);
+    setEnabled(isLocalhost && params.get("preview") === "admin");
+  }, []);
+
+  return enabled;
+}
 
 function statusClass(status: string) {
   if (["rejected", "out_of_order", "overdue", "open"].includes(status)) return "status-red";
@@ -331,7 +540,9 @@ function useThemeMode() {
 }
 
 export function MaintenanceCommandCenter() {
-  const { authUser, profile, loading, error, login, createAccount, resetPassword, logout } = useAuth();
+  const auth = useAuth();
+  const adminPreview = useAdminPreviewMode();
+  const profile = adminPreview ? previewAdminProfile : auth.profile;
   const [activeTab, setActiveTab] = useState<TabKey>("dashboard");
   const [selectedProperty, setSelectedProperty] = useState("all");
   const [addPropertyRequest, setAddPropertyRequest] = useState(0);
@@ -339,42 +550,66 @@ export function MaintenanceCommandCenter() {
   const { theme, toggleTheme } = useThemeMode();
 
   const propertyQuery = useMemo(() => {
+    if (adminPreview) return null;
     if (!db || !profile) return null;
     const base = collection(db, "properties");
     if (profile.role === "property_manager" || profile.role === "owner") return query(base, orderBy("name"));
     if (!profile.assignedProperties.length) return null;
     return query(base, where("id", "in", profile.assignedProperties));
-  }, [profile]);
+  }, [adminPreview, profile]);
 
-  const { items: properties, error: propertyError } = useLiveCollection<Property>(() => propertyQuery, [propertyQuery]);
+  const { items: liveProperties, error: livePropertyError } = useLiveCollection<Property>(() => propertyQuery, [propertyQuery]);
 
   const repairQuery = useMemo(() => {
+    if (adminPreview) return null;
     if (!db || !profile) return null;
     const base = collection(db, "repairLogs");
     if (profile.role === "technician") {
       return query(base, where("technicianId", "==", profile.id));
     }
     return propertyScopedQuery("repairLogs", profile);
-  }, [profile]);
-  const { items: repairLogs, error: repairError } = useLiveCollection<RepairLog>(() => repairQuery, [repairQuery]);
+  }, [adminPreview, profile]);
+  const { items: liveRepairLogs, error: liveRepairError } = useLiveCollection<RepairLog>(() => repairQuery, [repairQuery]);
 
-  const issueQuery = useMemo(() => (profile ? propertyScopedQuery("outOfOrderIssues", profile) : null), [profile]);
-  const { items: issues, error: issueError } = useLiveCollection<OutOfOrderIssue>(() => issueQuery, [issueQuery]);
+  const issueQuery = useMemo(
+    () => (adminPreview || !profile ? null : propertyScopedQuery("outOfOrderIssues", profile)),
+    [adminPreview, profile],
+  );
+  const { items: liveIssues, error: liveIssueError } = useLiveCollection<OutOfOrderIssue>(() => issueQuery, [issueQuery]);
 
   const scheduleQuery = useMemo(
-    () => (profile ? propertyScopedQuery("scheduledMaintenance", profile, "dueDate") : null),
-    [profile],
+    () => (adminPreview || !profile ? null : propertyScopedQuery("scheduledMaintenance", profile, "dueDate")),
+    [adminPreview, profile],
   );
-  const { items: scheduledMaintenance, error: scheduleError } = useLiveCollection<ScheduledMaintenance>(
+  const { items: liveScheduledMaintenance, error: liveScheduleError } = useLiveCollection<ScheduledMaintenance>(
     () => scheduleQuery,
     [scheduleQuery],
   );
 
   const usersQuery = useMemo(() => {
+    if (adminPreview) return null;
     if (!db || !profile || !["property_manager", "owner"].includes(profile.role)) return null;
     return query(collection(db, "users"), orderBy("name"));
-  }, [profile]);
-  const { items: users } = useLiveCollection<AppUser>(() => usersQuery, [usersQuery]);
+  }, [adminPreview, profile]);
+  const { items: liveUsers } = useLiveCollection<AppUser>(() => usersQuery, [usersQuery]);
+
+  const properties = adminPreview ? seedProperties : liveProperties;
+  const repairLogs = adminPreview ? previewRepairLogs : liveRepairLogs;
+  const issues = adminPreview ? previewIssues : liveIssues;
+  const scheduledMaintenance = adminPreview ? previewMaintenance : liveScheduledMaintenance;
+  const users = adminPreview ? previewUsers : liveUsers;
+  const propertyError = adminPreview ? null : livePropertyError;
+  const repairError = adminPreview ? null : liveRepairError;
+  const issueError = adminPreview ? null : liveIssueError;
+  const scheduleError = adminPreview ? null : liveScheduleError;
+
+  useEffect(() => {
+    if (!adminPreview) return;
+    const requestedTab = new URLSearchParams(window.location.search).get("tab") as TabKey | null;
+    if (requestedTab && getNavItems(previewAdminProfile.role).some((item) => item.key === requestedTab)) {
+      setActiveTab(requestedTab);
+    }
+  }, [adminPreview]);
 
   useEffect(() => {
     if (!profile) return;
@@ -420,33 +655,39 @@ export function MaintenanceCommandCenter() {
     [scheduledMaintenance, selectedProperty, profile],
   );
 
-  if (loading) {
+  if (!adminPreview && auth.loading) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-[var(--background)] px-6" data-theme={theme}>
         <div className="text-center">
           <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-lg bg-[var(--brand)] text-white">
             <Wrench size={28} />
           </div>
-          <p className="text-sm font-bold text-[var(--muted)]">Loading Maintenance Command Center</p>
+          <p className="text-sm font-bold text-[var(--muted)]">Loading HopKeep Command Center</p>
         </div>
       </main>
     );
   }
 
-  if (!authUser || !profile) {
+  if (!adminPreview && (!auth.authUser || !profile)) {
     return (
       <LoginScreen
-        login={login}
-        createAccount={createAccount}
-        resetPassword={resetPassword}
-        authError={error}
+        login={auth.login}
+        createAccount={auth.createAccount}
+        resetPassword={auth.resetPassword}
+        authError={auth.error}
         theme={theme}
         toggleTheme={toggleTheme}
       />
     );
   }
+  if (!profile) return null;
 
   const navItems = getNavItems(profile.role);
+  const handleLogout = adminPreview
+    ? () => {
+        window.location.href = "/";
+      }
+    : auth.logout;
 
   return (
     <main className="app-shell min-h-screen pb-24 text-[var(--text)] lg:pb-0" data-theme={theme}>
@@ -465,7 +706,7 @@ export function MaintenanceCommandCenter() {
           </div>
           <button
             type="button"
-            onClick={logout}
+            onClick={handleLogout}
             className="absolute bottom-5 left-4 right-4 inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-[var(--line)] bg-[var(--panel)] px-4 py-2 text-sm font-extrabold text-[var(--text)] transition hover:bg-[var(--soft)]"
           >
             <LogOut size={18} />
@@ -477,7 +718,7 @@ export function MaintenanceCommandCenter() {
           <header className="sticky top-0 z-20 border-b border-[var(--line)] bg-[var(--background-translucent)] px-4 py-4 backdrop-blur lg:px-8">
             <div className="mx-auto flex max-w-7xl items-center justify-between gap-3">
               <div className="min-w-0">
-                <p className="text-xs font-black uppercase tracking-[0.18em] text-[var(--brand)]">Maintenance Command Center</p>
+                <p className="text-xs font-black uppercase tracking-[0.18em] text-[var(--brand)]">HopKeep Command Center</p>
                 <h1 className="truncate text-3xl font-black text-[var(--text)] sm:text-4xl">
                   {navItems.find((item) => item.key === activeTab)?.label ?? "Dashboard"}
                 </h1>
@@ -545,7 +786,7 @@ export function MaintenanceCommandCenter() {
                 >
                   Profile settings
                 </SecondaryButton>
-                <SecondaryButton icon={<LogOut size={18} />} onClick={logout}>
+                <SecondaryButton icon={<LogOut size={18} />} onClick={handleLogout}>
                   Sign out
                 </SecondaryButton>
               </div>

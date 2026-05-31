@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Maintenance Command Center",
+  title: "HopKeep Command Center",
   description: "Hotel maintenance logs, approvals, out-of-order rooms, and scheduled work.",
 };
 

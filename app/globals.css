@@ -11,14 +11,14 @@
   --panel: #ffffff;
   --panel-hover: #fbfcfa;
   --soft: #f1f4f0;
-  --brand: #237a3d;
-  --brand-dark: #1c6332;
-  --brand-soft: #e3f2e5;
+  --brand: #6c933e;
+  --brand-dark: #6c933e;
+  --brand-soft: rgba(108, 147, 62, 0.16);
   --navy: #06295a;
   --navy-soft: #eef3fb;
-  --shadow: 0 8px 22px rgba(6, 41, 90, 0.08);
-  --shadow-strong: 0 18px 46px rgba(6, 41, 90, 0.13);
-  --focus: rgba(35, 122, 61, 0.18);
+  --shadow: 0 8px 22px rgba(108, 147, 62, 0.18);
+  --shadow-strong: 0 18px 46px rgba(108, 147, 62, 0.28);
+  --focus: rgba(108, 147, 62, 0.22);
   --danger-soft: #fff0f0;
   --danger: #c63d3d;
   --warning-soft: #fff5e8;
@@ -38,14 +38,14 @@
   --panel: #111c2c;
   --panel-hover: #162338;
   --soft: #172235;
-  --brand: #74c787;
-  --brand-dark: #4da862;
-  --brand-soft: #1d3a2b;
+  --brand: #6c933e;
+  --brand-dark: #6c933e;
+  --brand-soft: rgba(108, 147, 62, 0.22);
   --navy: #a9c6ff;
   --navy-soft: #14233a;
-  --shadow: 0 12px 28px rgba(0, 0, 0, 0.3);
-  --shadow-strong: 0 20px 52px rgba(0, 0, 0, 0.42);
-  --focus: rgba(116, 199, 135, 0.22);
+  --shadow: 0 12px 28px rgba(108, 147, 62, 0.24);
+  --shadow-strong: 0 20px 52px rgba(108, 147, 62, 0.34);
+  --focus: rgba(108, 147, 62, 0.26);
   --danger-soft: #351a1e;
   --danger: #ff8f8f;
   --warning-soft: #352719;
@@ -110,7 +110,7 @@ button {
 }
 
 .card {
-  border: 1px solid var(--line);
+  border: 2px solid var(--line);
   border-radius: 8px;
   background: var(--panel);
   box-shadow: var(--shadow);
@@ -153,8 +153,15 @@ button {
   box-shadow: var(--shadow);
 }
 
+.sidebar-card,
+.top-control,
+.metric-tile {
+  border-width: 2px;
+}
+
 .top-control {
-  border: 1px solid var(--line);
+  border-style: solid;
+  border-color: var(--line);
   background: var(--panel);
   color: var(--text);
 }
@@ -174,7 +181,8 @@ button {
 }
 
 .metric-tile {
-  border: 1px solid var(--line);
+  border-style: solid;
+  border-color: var(--line);
   background: var(--panel);
 }
 

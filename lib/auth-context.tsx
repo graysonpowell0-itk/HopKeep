@@ -121,6 +121,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const isAdminPreview =
+      ["localhost", "127.0.0.1"].includes(window.location.hostname) && params.get("preview") === "admin";
+
+    if (isAdminPreview) {
+      setAuthUser(null);
+      setProfile(null);
+      setError(null);
+      setLoading(false);
+      return;
+    }
+
     if (!auth || !db) {
       setLoading(false);
       return;
