@@ -1348,7 +1348,7 @@ function Dashboard({
   const approvedToday = repairLogs.filter(
     (log) => log.approvalStatus === "approved" && log.endTime.slice(0, 10) === todayInputValue(),
   ).length;
-  const rejected = repairLogs.filter((log) => ["rejected", "needs_info"].includes(log.approvalStatus)).length;
+  const needsFollowUp = repairLogs.filter((log) => log.approvalStatus === "needs_info").length;
   const outOfOrder = issues.filter((issue) => issue.status !== "closed").length;
   const due = maintenance.filter((task) => task.status !== "completed").length;
 
@@ -1357,7 +1357,7 @@ function Dashboard({
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         <StatCard label="Pending approval" value={pending} tone="pending" icon={<Clock size={20} />} />
         <StatCard label="Approved today" value={approvedToday} tone="approved" icon={<Check size={20} />} />
-        <StatCard label="Needs follow-up" value={rejected} tone="rejected" icon={<AlertTriangle size={20} />} />
+        <StatCard label="Needs follow-up" value={needsFollowUp} tone="rejected" icon={<AlertTriangle size={20} />} />
         <StatCard label="Out-of-order" value={outOfOrder} tone="open" icon={<DoorOpen size={20} />} />
         <StatCard label="Scheduled work" value={due} tone="scheduled" icon={<CalendarDays size={20} />} />
       </div>
