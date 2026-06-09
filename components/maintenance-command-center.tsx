@@ -439,6 +439,15 @@ function propertyName(properties: Property[], propertyId: string) {
   return properties.find((property) => property.id === propertyId)?.name ?? propertyId;
 }
 
+function isPendingAccountRequest(user: AppUser) {
+  return user.accountStatus?.startsWith("pending") || (!user.accountStatus && user.active === false);
+}
+
+function canApproveAccountRequest(profile: AppUser, user: AppUser) {
+  if (user.role === "property_manager" || user.approvalRequiredBy === "owner") return profile.role === "owner";
+  return profile.role === "property_manager" || profile.role === "owner";
+}
+
 function matchesProperty(selectedProperty: string, propertyId: string) {
   return selectedProperty === "all" || selectedProperty === propertyId;
 }
@@ -591,7 +600,7 @@ export function MaintenanceCommandCenter() {
     if (!db || !profile || !["property_manager", "owner"].includes(profile.role)) return null;
     return query(collection(db, "users"), orderBy("name"));
   }, [adminPreview, profile]);
-  const { items: liveUsers } = useLiveCollection<AppUser>(() => usersQuery, [usersQuery]);
+  const { items: liveUsers, error: liveUserError } = useLiveCollection<AppUser>(() => usersQuery, [usersQuery]);
 
   const properties = adminPreview ? seedProperties : liveProperties;
   const repairLogs = adminPreview ? previewRepairLogs : liveRepairLogs;
@@ -794,7 +803,7 @@ export function MaintenanceCommandCenter() {
           </header>
 
           <div className="mx-auto max-w-7xl px-4 py-6 lg:px-8">
-            <ErrorStrip errors={[propertyError, repairError, issueError, scheduleError]} />
+            <ErrorStrip errors={[propertyError, repairError, issueError, scheduleError, liveUserError]} />
             {activeTab === "dashboard" ? (
               <Dashboard
                 profile={profile}
@@ -802,6 +811,7 @@ export function MaintenanceCommandCenter() {
                 repairLogs={visibleRepairLogs}
                 issues={visibleIssues}
                 maintenance={visibleMaintenance}
+                users={users}
                 setActiveTab={setActiveTab}
               />
             ) : null}
@@ -814,7 +824,7 @@ export function MaintenanceCommandCenter() {
               <OutOfOrderPanel profile={profile} properties={activeProperties} issues={visibleIssues} />
             ) : null}
             {activeTab === "approvals" ? (
-              <ApprovalQueue profile={profile} properties={activeProperties} logs={visibleRepairLogs} />
+              <ApprovalQueue profile={profile} properties={activeProperties} logs={visibleRepairLogs} users={users} />
             ) : null}
             {activeTab === "daily-log" ? <DailyLog properties={activeProperties} logs={visibleRepairLogs} /> : null}
             {activeTab === "calendar" ? (
@@ -1335,6 +1345,7 @@ function Dashboard({
   repairLogs,
   issues,
   maintenance,
+  users,
   setActiveTab,
 }: {
   profile: AppUser;
@@ -1342,6 +1353,7 @@ function Dashboard({
   repairLogs: RepairLog[];
   issues: OutOfOrderIssue[];
   maintenance: ScheduledMaintenance[];
+  users: AppUser[];
   setActiveTab: (tab: TabKey) => void;
 }) {
   const pending = repairLogs.filter((log) => log.approvalStatus === "pending").length;
@@ -1351,11 +1363,15 @@ function Dashboard({
   const needsFollowUp = repairLogs.filter((log) => log.approvalStatus === "needs_info").length;
   const outOfOrder = issues.filter((issue) => issue.status !== "closed").length;
   const due = maintenance.filter((task) => task.status !== "completed").length;
+  const pendingAccounts = users.filter(isPendingAccountRequest).length;
 
   return (
     <div className="space-y-5">
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         <StatCard label="Pending approval" value={pending} tone="pending" icon={<Clock size={20} />} />
+        {profile.role === "property_manager" || profile.role === "owner" ? (
+          <StatCard label="Account requests" value={pendingAccounts} tone="pending" icon={<ShieldCheck size={20} />} />
+        ) : null}
         <StatCard label="Approved today" value={approvedToday} tone="approved" icon={<Check size={20} />} />
         <StatCard label="Needs follow-up" value={needsFollowUp} tone="rejected" icon={<AlertTriangle size={20} />} />
         <StatCard label="Out-of-order" value={outOfOrder} tone="open" icon={<DoorOpen size={20} />} />
@@ -1380,8 +1396,8 @@ function Dashboard({
       ) : (
         <div className="grid gap-4 md:grid-cols-3">
           <QuickAction
-            title="Review pending logs"
-            text="Approve, reject, or request more info from technicians."
+            title="Review approvals"
+            text="Approve account requests and pending repair logs."
             icon={<ClipboardCheck size={22} />}
             onClick={() => setActiveTab("approvals")}
           />
@@ -1798,8 +1814,19 @@ function PhotoStrip({ before, after }: { before: string[]; after: string[] }) {
   );
 }
 
-function ApprovalQueue({ profile, logs, properties }: { profile: AppUser; logs: RepairLog[]; properties: Property[] }) {
+function ApprovalQueue({
+  profile,
+  logs,
+  properties,
+  users,
+}: {
+  profile: AppUser;
+  logs: RepairLog[];
+  properties: Property[];
+  users: AppUser[];
+}) {
   const pendingLogs = logs.filter((log) => ["pending", "needs_info"].includes(log.approvalStatus));
+  const pendingUsers = users.filter(isPendingAccountRequest);
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [busyId, setBusyId] = useState<string | null>(null);
 
@@ -1824,10 +1851,13 @@ function ApprovalQueue({ profile, logs, properties }: { profile: AppUser; logs: 
     }
   }
 
-  if (!pendingLogs.length) return <EmptyState title="No pending approvals" text="Submitted repair logs will land here for review." />;
+  if (!pendingLogs.length && !pendingUsers.length) {
+    return <EmptyState title="No pending approvals" text="Account requests and submitted repair logs will land here for review." />;
+  }
 
   return (
     <div className="grid gap-4">
+      <AccountRequestsSection profile={profile} users={users} />
       {pendingLogs.map((log) => (
         <article key={log.id} className="card p-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -1872,6 +1902,84 @@ function ApprovalQueue({ profile, logs, properties }: { profile: AppUser; logs: 
         </article>
       ))}
     </div>
+  );
+}
+
+function AccountRequestsSection({
+  profile,
+  users,
+  showEmpty = false,
+}: {
+  profile: AppUser;
+  users: AppUser[];
+  showEmpty?: boolean;
+}) {
+  const pendingUsers = users.filter(isPendingAccountRequest);
+  const [busyUserId, setBusyUserId] = useState<string | null>(null);
+
+  async function reviewUser(user: AppUser, approved: boolean) {
+    if (!db || !canApproveAccountRequest(profile, user)) return;
+    const activeDb = db;
+    setBusyUserId(user.id);
+    try {
+      await updateDoc(doc(activeDb, "users", user.id), {
+        active: approved,
+        accountStatus: approved ? "approved" : "rejected",
+        approvedBy: approved ? profile.id : "",
+        approvedByName: approved ? profile.name : "",
+        approvedAt: approved ? serverTimestamp() : null,
+        updatedAt: serverTimestamp(),
+      });
+    } finally {
+      setBusyUserId(null);
+    }
+  }
+
+  if (!pendingUsers.length && !showEmpty) return null;
+
+  return (
+    <section className="card p-4">
+      <SectionTitle title="Account Requests" icon={<ShieldCheck size={20} />} />
+      {pendingUsers.length ? (
+        <div className="grid gap-3">
+          {pendingUsers.map((user) => (
+            <article key={user.id} className="rounded-lg border border-[var(--line)] bg-[var(--soft)] p-3">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <h3 className="font-black text-[var(--text)]">{user.name}</h3>
+                  <p className="text-sm font-bold text-[var(--muted)]">{user.email}</p>
+                  <p className="mt-2 text-xs font-black uppercase tracking-wide text-[var(--muted)]">
+                    Requested {user.role === "property_manager" ? "Admin" : roleLabels[user.role]} -{" "}
+                    {accountStatusLabels[user.accountStatus ?? "pending_admin"]}
+                  </p>
+                </div>
+                <Badge tone={user.approvalRequiredBy === "owner" ? "pending" : "scheduled"}>
+                  {user.approvalRequiredBy === "owner" ? "Owner approval" : "Admin approval"}
+                </Badge>
+              </div>
+              <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:justify-end">
+                {canApproveAccountRequest(profile, user) ? (
+                  <>
+                    <DangerButton disabled={busyUserId === user.id} onClick={() => reviewUser(user, false)}>
+                      Reject
+                    </DangerButton>
+                    <PrimaryButton disabled={busyUserId === user.id} onClick={() => reviewUser(user, true)} icon={<Check size={17} />}>
+                      Approve
+                    </PrimaryButton>
+                  </>
+                ) : (
+                  <p className="text-sm font-bold text-[var(--muted)]">
+                    {user.approvalRequiredBy === "owner" ? "Only the owner can approve admin accounts." : "Admin approval required."}
+                  </p>
+                )}
+              </div>
+            </article>
+          ))}
+        </div>
+      ) : (
+        <p className="text-sm font-medium text-[var(--muted)]">No pending account requests.</p>
+      )}
+    </section>
   );
 }
 
@@ -2716,11 +2824,8 @@ function UsersPanel({ profile, users, properties }: { profile: AppUser; users: A
   const [role, setRole] = useState<UserRole>("technician");
   const [assignedProperties, setAssignedProperties] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
-  const [busyUserId, setBusyUserId] = useState<string | null>(null);
 
-  const pendingUsers = users.filter((user) => user.accountStatus?.startsWith("pending") || user.active === false);
-  const approvedUsers = users.filter((user) => user.active !== false && !user.accountStatus?.startsWith("pending"));
-  const canApproveAdmins = profile.role === "owner";
+  const approvedUsers = users.filter((user) => user.active !== false && !isPendingAccountRequest(user));
 
   function toggleProperty(propertyId: string) {
     setAssignedProperties((current) =>
@@ -2755,29 +2860,6 @@ function UsersPanel({ profile, users, properties }: { profile: AppUser; users: A
       setAssignedProperties([]);
     } finally {
       setBusy(false);
-    }
-  }
-
-  function canApproveUser(user: AppUser) {
-    if (user.role === "property_manager" || user.approvalRequiredBy === "owner") return canApproveAdmins;
-    return profile.role === "property_manager" || profile.role === "owner";
-  }
-
-  async function reviewUser(user: AppUser, approved: boolean) {
-    if (!db || !canApproveUser(user)) return;
-    const activeDb = db;
-    setBusyUserId(user.id);
-    try {
-      await updateDoc(doc(activeDb, "users", user.id), {
-        active: approved,
-        accountStatus: approved ? "approved" : "rejected",
-        approvedBy: approved ? profile.id : "",
-        approvedByName: approved ? profile.name : "",
-        approvedAt: approved ? serverTimestamp() : null,
-        updatedAt: serverTimestamp(),
-      });
-    } finally {
-      setBusyUserId(null);
     }
   }
 
@@ -2826,48 +2908,7 @@ function UsersPanel({ profile, users, properties }: { profile: AppUser; users: A
       </form>
 
       <section className="grid gap-3">
-        <div className="card p-4">
-          <SectionTitle title="Account Requests" icon={<UserCog size={20} />} />
-          {pendingUsers.length ? (
-            <div className="grid gap-3">
-              {pendingUsers.map((user) => (
-                <article key={user.id} className="rounded-lg border border-[var(--line)] bg-[var(--soft)] p-3">
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                    <div>
-                      <h3 className="font-black text-[var(--text)]">{user.name}</h3>
-                      <p className="text-sm font-bold text-[var(--muted)]">{user.email}</p>
-                      <p className="mt-2 text-xs font-black uppercase tracking-wide text-[var(--muted)]">
-                        Requested {user.role === "property_manager" ? "Admin" : roleLabels[user.role]} -{" "}
-                        {accountStatusLabels[user.accountStatus ?? "pending_admin"]}
-                      </p>
-                    </div>
-                    <Badge tone={user.approvalRequiredBy === "owner" ? "pending" : "scheduled"}>
-                      {user.approvalRequiredBy === "owner" ? "Owner approval" : "Admin approval"}
-                    </Badge>
-                  </div>
-                  <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:justify-end">
-                    {canApproveUser(user) ? (
-                      <>
-                        <DangerButton disabled={busyUserId === user.id} onClick={() => reviewUser(user, false)}>
-                          Reject
-                        </DangerButton>
-                        <PrimaryButton disabled={busyUserId === user.id} onClick={() => reviewUser(user, true)} icon={<Check size={17} />}>
-                          Approve
-                        </PrimaryButton>
-                      </>
-                    ) : (
-                      <p className="text-sm font-bold text-[var(--muted)]">
-                        {user.approvalRequiredBy === "owner" ? "Only the owner can approve admin accounts." : "Admin approval required."}
-                      </p>
-                    )}
-                  </div>
-                </article>
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm font-medium text-[var(--muted)]">No pending account requests.</p>
-          )}
-        </div>
+        <AccountRequestsSection profile={profile} users={users} showEmpty />
 
         {approvedUsers.map((user) => (
           <article key={user.id} className="card p-4">
