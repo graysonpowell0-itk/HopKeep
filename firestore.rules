@@ -48,7 +48,9 @@ service cloud.firestore {
             request.resource.data.role == "technician"
             && request.resource.data.accountStatus == "pending_admin"
             && request.resource.data.approvalRequiredBy == "admin"
-            && request.resource.data.assignedProperties == ["hampton_inn"]
+            && request.resource.data.assignedProperties is list
+            && request.resource.data.assignedProperties.size() > 0
+            && request.resource.data.assignedProperties.size() <= 3
           )
           || (
             request.resource.data.role == "property_manager"
@@ -66,9 +68,33 @@ service cloud.firestore {
           "department",
           "bio",
           "photoUrl",
+          "dailyPropertyId",
+          "pendingPropertyIds",
+          "propertyChangeStatus",
+          "propertyChangeRequestedAt",
+          "propertyChangeRequestedBy",
           "updatedAt",
           "lastSeen"
-        ]);
+        ])
+        && (
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(["dailyPropertyId"])
+          || request.resource.data.dailyPropertyId in resource.data.assignedProperties
+        )
+        && (
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+            "pendingPropertyIds",
+            "propertyChangeStatus",
+            "propertyChangeRequestedAt",
+            "propertyChangeRequestedBy"
+          ])
+          || (
+            request.resource.data.pendingPropertyIds is list
+            && request.resource.data.pendingPropertyIds.size() > 0
+            && request.resource.data.pendingPropertyIds.size() <= 3
+            && request.resource.data.propertyChangeStatus == "pending"
+            && request.resource.data.propertyChangeRequestedBy == request.auth.uid
+          )
+        );
       allow update: if owner();
       allow update: if manager()
         && resource.data.role in ["technician", "property_admin"]

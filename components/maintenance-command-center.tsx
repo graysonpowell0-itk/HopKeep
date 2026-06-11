@@ -439,6 +439,30 @@ function propertyName(properties: Property[], propertyId: string) {
   return properties.find((property) => property.id === propertyId)?.name ?? propertyId;
 }
 
+function normalizePropertySelection(propertyIds: string[], properties: Property[]) {
+  const validIds = new Set(properties.map((property) => property.id));
+  return Array.from(new Set(propertyIds)).filter((propertyId) => validIds.has(propertyId));
+}
+
+function samePropertySelection(left: string[], right: string[]) {
+  if (left.length !== right.length) return false;
+  const rightSet = new Set(right);
+  return left.every((propertyId) => rightSet.has(propertyId));
+}
+
+function preferredPropertyId(profile: AppUser, properties: Property[]) {
+  if (profile.dailyPropertyId && profile.assignedProperties.includes(profile.dailyPropertyId)) return profile.dailyPropertyId;
+  return profile.assignedProperties[0] ?? properties[0]?.id ?? "";
+}
+
+function isPendingPropertyRequest(user: AppUser) {
+  return user.propertyChangeStatus === "pending" && Boolean(user.pendingPropertyIds?.length);
+}
+
+function isPendingUserRequest(user: AppUser) {
+  return isPendingAccountRequest(user) || isPendingPropertyRequest(user);
+}
+
 function isPendingAccountRequest(user: AppUser) {
   return user.accountStatus?.startsWith("pending") || (!user.accountStatus && user.active === false);
 }
@@ -629,9 +653,9 @@ export function MaintenanceCommandCenter() {
     setSelectedProperty((current) =>
       current !== "all" && profile.assignedProperties.includes(current)
         ? current
-        : profile.assignedProperties[0] ?? "all",
+        : preferredPropertyId(profile, properties) || "all",
     );
-  }, [profile]);
+  }, [profile, properties]);
 
   const activeProperties = useMemo(
     () => properties.filter((property) => property.active !== false).sort((a, b) => a.name.localeCompare(b.name)),
@@ -832,7 +856,7 @@ export function MaintenanceCommandCenter() {
             ) : null}
             {activeTab === "properties" ? <PropertiesPanel properties={properties} addPropertyRequest={addPropertyRequest} /> : null}
             {activeTab === "users" ? <UsersPanel profile={profile} users={users} properties={activeProperties} /> : null}
-            {activeTab === "profile" ? <ProfileSettings profile={profile} /> : null}
+            {activeTab === "profile" ? <ProfileSettings profile={profile} properties={activeProperties} /> : null}
           </div>
         </section>
       </div>
@@ -872,6 +896,7 @@ function LoginScreen({
     email: string;
     password: string;
     requestedRole: "technician" | "property_manager";
+    assignedProperties: string[];
   }) => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
   authError: string | null;
@@ -881,6 +906,7 @@ function LoginScreen({
   const [mode, setMode] = useState<"sign-in" | "create">("sign-in");
   const [name, setName] = useState("");
   const [requestedRole, setRequestedRole] = useState<"technician" | "property_manager">("technician");
+  const [requestedProperties, setRequestedProperties] = useState<string[]>(["hampton_inn"]);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -894,11 +920,17 @@ function LoginScreen({
     setMessage(null);
     try {
       if (mode === "create") {
-        await createAccount({ name, email, password, requestedRole });
+        const assignedProperties =
+          requestedRole === "property_manager" ? seedProperties.map((property) => property.id) : requestedProperties;
+        if (requestedRole === "technician" && !assignedProperties.length) {
+          throw new Error("Choose at least one property where this technician works.");
+        }
+        await createAccount({ name, email, password, requestedRole, assignedProperties });
         setName("");
         setEmail("");
         setPassword("");
         setRequestedRole("technician");
+        setRequestedProperties(["hampton_inn"]);
         setMode("sign-in");
         setMessage(
           requestedRole === "property_manager"
@@ -913,6 +945,12 @@ function LoginScreen({
     } finally {
       setBusy(false);
     }
+  }
+
+  function toggleRequestedProperty(propertyId: string) {
+    setRequestedProperties((current) =>
+      current.includes(propertyId) ? current.filter((item) => item !== propertyId) : [...current, propertyId],
+    );
   }
 
   async function handleResetPassword() {
@@ -1038,6 +1076,26 @@ function LoginScreen({
                 <option value="technician">Maintenance tech</option>
                 <option value="property_manager">Admin</option>
               </select>
+              {requestedRole === "technician" ? (
+                <div className="mb-4">
+                  <span className="label">Property assignment</span>
+                  <div className="grid gap-2">
+                    {seedProperties.map((property) => (
+                      <label
+                        key={property.id}
+                        className="flex items-center gap-3 rounded-lg border border-[var(--line)] bg-[var(--panel)] p-3 text-sm font-extrabold"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={requestedProperties.includes(property.id)}
+                          onChange={() => toggleRequestedProperty(property.id)}
+                        />
+                        {property.name}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
             </>
           ) : null}
           <label className="label" htmlFor="email">
@@ -1363,14 +1421,14 @@ function Dashboard({
   const needsFollowUp = repairLogs.filter((log) => log.approvalStatus === "needs_info").length;
   const outOfOrder = issues.filter((issue) => issue.status !== "closed").length;
   const due = maintenance.filter((task) => task.status !== "completed").length;
-  const pendingAccounts = users.filter(isPendingAccountRequest).length;
+  const pendingAccounts = users.filter(isPendingUserRequest).length;
 
   return (
     <div className="space-y-5">
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         <StatCard label="Pending approval" value={pending} tone="pending" icon={<Clock size={20} />} />
         {profile.role === "property_manager" || profile.role === "owner" ? (
-          <StatCard label="Account requests" value={pendingAccounts} tone="pending" icon={<ShieldCheck size={20} />} />
+          <StatCard label="User requests" value={pendingAccounts} tone="pending" icon={<ShieldCheck size={20} />} />
         ) : null}
         <StatCard label="Approved today" value={approvedToday} tone="approved" icon={<Check size={20} />} />
         <StatCard label="Needs follow-up" value={needsFollowUp} tone="rejected" icon={<AlertTriangle size={20} />} />
@@ -1504,7 +1562,7 @@ function QuickAction({
 }
 
 function RepairForm({ profile, properties }: { profile: AppUser; properties: Property[] }) {
-  const [propertyId, setPropertyId] = useState(profile.assignedProperties[0] ?? properties[0]?.id ?? "");
+  const [propertyId, setPropertyId] = useState(preferredPropertyId(profile, properties));
   const [roomOrLocation, setRoomOrLocation] = useState("");
   const [locationType, setLocationType] = useState<RepairLog["locationType"]>("room");
   const [category, setCategory] = useState(categories[0]);
@@ -1522,8 +1580,9 @@ function RepairForm({ profile, properties }: { profile: AppUser; properties: Pro
   const totalMinutes = minutesBetween(startTime, endTime);
 
   useEffect(() => {
-    if (!propertyId && properties[0]?.id) setPropertyId(properties[0].id);
-  }, [properties, propertyId]);
+    const preferred = preferredPropertyId(profile, properties);
+    if (!propertyId && preferred) setPropertyId(preferred);
+  }, [profile, properties, propertyId]);
 
   async function uploadImages(files: FileList | null, logId: string, phase: "before" | "after") {
     const activeStorage = storage;
@@ -1826,7 +1885,7 @@ function ApprovalQueue({
   users: AppUser[];
 }) {
   const pendingLogs = logs.filter((log) => ["pending", "needs_info"].includes(log.approvalStatus));
-  const pendingUsers = users.filter(isPendingAccountRequest);
+  const pendingUsers = users.filter(isPendingUserRequest);
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [busyId, setBusyId] = useState<string | null>(null);
 
@@ -1857,7 +1916,7 @@ function ApprovalQueue({
 
   return (
     <div className="grid gap-4">
-      <AccountRequestsSection profile={profile} users={users} />
+      <AccountRequestsSection profile={profile} users={users} properties={properties} />
       {pendingLogs.map((log) => (
         <article key={log.id} className="card p-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -1908,13 +1967,15 @@ function ApprovalQueue({
 function AccountRequestsSection({
   profile,
   users,
+  properties,
   showEmpty = false,
 }: {
   profile: AppUser;
   users: AppUser[];
+  properties: Property[];
   showEmpty?: boolean;
 }) {
-  const pendingUsers = users.filter(isPendingAccountRequest);
+  const pendingUsers = users.filter(isPendingUserRequest);
   const [busyUserId, setBusyUserId] = useState<string | null>(null);
 
   async function reviewUser(user: AppUser, approved: boolean) {
@@ -1935,49 +1996,99 @@ function AccountRequestsSection({
     }
   }
 
+  async function reviewPropertyChange(user: AppUser, approved: boolean) {
+    if (!db || !canApproveAccountRequest(profile, user)) return;
+    const requestedProperties = normalizePropertySelection(user.pendingPropertyIds ?? [], properties);
+    if (!requestedProperties.length) return;
+    const activeDb = db;
+    setBusyUserId(user.id);
+    try {
+      await updateDoc(doc(activeDb, "users", user.id), {
+        assignedProperties: approved ? requestedProperties : user.assignedProperties,
+        dailyPropertyId: approved
+          ? requestedProperties.includes(user.dailyPropertyId ?? "")
+            ? user.dailyPropertyId
+            : requestedProperties[0]
+          : user.dailyPropertyId ?? user.assignedProperties[0] ?? "",
+        pendingPropertyIds: [],
+        propertyChangeStatus: approved ? "approved" : "rejected",
+        propertyChangeReviewedBy: profile.id,
+        propertyChangeReviewedByName: profile.name,
+        propertyChangeReviewedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+    } finally {
+      setBusyUserId(null);
+    }
+  }
+
   if (!pendingUsers.length && !showEmpty) return null;
 
   return (
     <section className="card p-4">
-      <SectionTitle title="Account Requests" icon={<ShieldCheck size={20} />} />
+      <SectionTitle title="User Requests" icon={<ShieldCheck size={20} />} />
       {pendingUsers.length ? (
         <div className="grid gap-3">
-          {pendingUsers.map((user) => (
-            <article key={user.id} className="rounded-lg border border-[var(--line)] bg-[var(--soft)] p-3">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div>
-                  <h3 className="font-black text-[var(--text)]">{user.name}</h3>
-                  <p className="text-sm font-bold text-[var(--muted)]">{user.email}</p>
-                  <p className="mt-2 text-xs font-black uppercase tracking-wide text-[var(--muted)]">
-                    Requested {user.role === "property_manager" ? "Admin" : roleLabels[user.role]} -{" "}
-                    {accountStatusLabels[user.accountStatus ?? "pending_admin"]}
-                  </p>
+          {pendingUsers.map((user) => {
+            const accountPending = isPendingAccountRequest(user);
+            const propertyPending = isPendingPropertyRequest(user);
+            return (
+              <article key={user.id} className="rounded-lg border border-[var(--line)] bg-[var(--soft)] p-3">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <h3 className="font-black text-[var(--text)]">{user.name}</h3>
+                    <p className="text-sm font-bold text-[var(--muted)]">{user.email}</p>
+                    {accountPending ? (
+                      <p className="mt-2 text-xs font-black uppercase tracking-wide text-[var(--muted)]">
+                        Requested {user.role === "property_manager" ? "Admin" : roleLabels[user.role]} -{" "}
+                        {accountStatusLabels[user.accountStatus ?? "pending_admin"]}
+                      </p>
+                    ) : null}
+                    {propertyPending ? (
+                      <p className="mt-2 text-xs font-black uppercase tracking-wide text-[var(--muted)]">
+                        Property change: {(user.pendingPropertyIds ?? []).map((id) => propertyName(properties, id)).join(", ")}
+                      </p>
+                    ) : null}
+                  </div>
+                  <Badge tone={user.approvalRequiredBy === "owner" ? "pending" : "scheduled"}>
+                    {propertyPending && !accountPending
+                      ? "Property approval"
+                      : user.approvalRequiredBy === "owner"
+                        ? "Owner approval"
+                        : "Admin approval"}
+                  </Badge>
                 </div>
-                <Badge tone={user.approvalRequiredBy === "owner" ? "pending" : "scheduled"}>
-                  {user.approvalRequiredBy === "owner" ? "Owner approval" : "Admin approval"}
-                </Badge>
-              </div>
-              <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:justify-end">
-                {canApproveAccountRequest(profile, user) ? (
-                  <>
-                    <DangerButton disabled={busyUserId === user.id} onClick={() => reviewUser(user, false)}>
-                      Reject
-                    </DangerButton>
-                    <PrimaryButton disabled={busyUserId === user.id} onClick={() => reviewUser(user, true)} icon={<Check size={17} />}>
-                      Approve
-                    </PrimaryButton>
-                  </>
-                ) : (
-                  <p className="text-sm font-bold text-[var(--muted)]">
-                    {user.approvalRequiredBy === "owner" ? "Only the owner can approve admin accounts." : "Admin approval required."}
-                  </p>
-                )}
-              </div>
-            </article>
-          ))}
+                <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:justify-end">
+                  {accountPending && canApproveAccountRequest(profile, user) ? (
+                    <>
+                      <DangerButton disabled={busyUserId === user.id} onClick={() => reviewUser(user, false)}>
+                        Reject account
+                      </DangerButton>
+                      <PrimaryButton disabled={busyUserId === user.id} onClick={() => reviewUser(user, true)} icon={<Check size={17} />}>
+                        Approve account
+                      </PrimaryButton>
+                    </>
+                  ) : propertyPending && canApproveAccountRequest(profile, user) ? (
+                    <>
+                      <DangerButton disabled={busyUserId === user.id} onClick={() => reviewPropertyChange(user, false)}>
+                        Reject properties
+                      </DangerButton>
+                      <PrimaryButton disabled={busyUserId === user.id} onClick={() => reviewPropertyChange(user, true)} icon={<Check size={17} />}>
+                        Approve properties
+                      </PrimaryButton>
+                    </>
+                  ) : (
+                    <p className="text-sm font-bold text-[var(--muted)]">
+                      {user.approvalRequiredBy === "owner" ? "Only the owner can approve admin accounts." : "Admin approval required."}
+                    </p>
+                  )}
+                </div>
+              </article>
+            );
+          })}
         </div>
       ) : (
-        <p className="text-sm font-medium text-[var(--muted)]">No pending account requests.</p>
+        <p className="text-sm font-medium text-[var(--muted)]">No pending user requests.</p>
       )}
     </section>
   );
@@ -2077,7 +2188,7 @@ function OutOfOrderPanel({
   properties: Property[];
   issues: OutOfOrderIssue[];
 }) {
-  const [propertyId, setPropertyId] = useState(profile.assignedProperties[0] ?? properties[0]?.id ?? "");
+  const [propertyId, setPropertyId] = useState(preferredPropertyId(profile, properties));
   const [roomOrLocation, setRoomOrLocation] = useState("");
   const [locationType, setLocationType] = useState<OutOfOrderIssue["locationType"]>("room");
   const [category, setCategory] = useState(categories[0]);
@@ -2215,7 +2326,7 @@ function CalendarPanel({
   tasks: ScheduledMaintenance[];
   users: AppUser[];
 }) {
-  const [propertyId, setPropertyId] = useState(profile.assignedProperties[0] ?? properties[0]?.id ?? "");
+  const [propertyId, setPropertyId] = useState(preferredPropertyId(profile, properties));
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [category, setCategory] = useState(categories[0]);
@@ -2677,7 +2788,7 @@ function PropertiesPanel({ properties, addPropertyRequest }: { properties: Prope
   );
 }
 
-function ProfileSettings({ profile }: { profile: AppUser }) {
+function ProfileSettings({ profile, properties }: { profile: AppUser; properties: Property[] }) {
   const [name, setName] = useState(profile.name);
   const [phone, setPhone] = useState(profile.phone ?? "");
   const [jobTitle, setJobTitle] = useState(profile.jobTitle ?? "");
@@ -2685,6 +2796,10 @@ function ProfileSettings({ profile }: { profile: AppUser }) {
   const [bio, setBio] = useState(profile.bio ?? "");
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState(profile.photoUrl ?? "");
+  const [dailyPropertyId, setDailyPropertyId] = useState(preferredPropertyId(profile, properties));
+  const [requestedPropertyIds, setRequestedPropertyIds] = useState<string[]>(
+    profile.pendingPropertyIds?.length ? profile.pendingPropertyIds : profile.assignedProperties,
+  );
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -2695,7 +2810,9 @@ function ProfileSettings({ profile }: { profile: AppUser }) {
     setDepartment(profile.department ?? "");
     setBio(profile.bio ?? "");
     setPreviewUrl(profile.photoUrl ?? "");
-  }, [profile]);
+    setDailyPropertyId(preferredPropertyId(profile, properties));
+    setRequestedPropertyIds(profile.pendingPropertyIds?.length ? profile.pendingPropertyIds : profile.assignedProperties);
+  }, [profile, properties]);
 
   useEffect(() => {
     if (!photoFile) return;
@@ -2703,6 +2820,12 @@ function ProfileSettings({ profile }: { profile: AppUser }) {
     setPreviewUrl(objectUrl);
     return () => URL.revokeObjectURL(objectUrl);
   }, [photoFile]);
+
+  function toggleRequestedProfileProperty(propertyId: string) {
+    setRequestedPropertyIds((current) =>
+      current.includes(propertyId) ? current.filter((item) => item !== propertyId) : [...current, propertyId],
+    );
+  }
 
   async function saveProfile(event: FormEvent) {
     event.preventDefault();
@@ -2722,7 +2845,8 @@ function ProfileSettings({ profile }: { profile: AppUser }) {
         photoUrl = await getDownloadURL(imageRef);
       }
 
-      await updateDoc(doc(activeDb, "users", profile.id), {
+      const normalizedRequest = normalizePropertySelection(requestedPropertyIds, properties);
+      const profileUpdate: Record<string, unknown> = {
         name: name.trim() || profile.name,
         phone: phone.trim(),
         jobTitle: jobTitle.trim(),
@@ -2730,11 +2854,29 @@ function ProfileSettings({ profile }: { profile: AppUser }) {
         bio: bio.trim(),
         photoUrl,
         updatedAt: serverTimestamp(),
-      });
+      };
+
+      if (profile.role === "technician") {
+        profileUpdate.dailyPropertyId = profile.assignedProperties.includes(dailyPropertyId)
+          ? dailyPropertyId
+          : profile.assignedProperties[0] ?? "";
+        if (normalizedRequest.length && !samePropertySelection(normalizedRequest, profile.assignedProperties)) {
+          profileUpdate.pendingPropertyIds = normalizedRequest;
+          profileUpdate.propertyChangeStatus = "pending";
+          profileUpdate.propertyChangeRequestedAt = serverTimestamp();
+          profileUpdate.propertyChangeRequestedBy = profile.id;
+        }
+      }
+
+      await updateDoc(doc(activeDb, "users", profile.id), profileUpdate);
 
       setPhotoFile(null);
       setPreviewUrl(photoUrl);
-      setMessage("Profile settings saved.");
+      setMessage(
+        profile.role === "technician" && !samePropertySelection(normalizePropertySelection(requestedPropertyIds, properties), profile.assignedProperties)
+          ? "Profile saved. Property changes are pending admin approval."
+          : "Profile settings saved.",
+      );
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "Unable to save profile settings.");
     } finally {
@@ -2796,6 +2938,39 @@ function ProfileSettings({ profile }: { profile: AppUser }) {
               placeholder="Maintenance, Operations"
             />
           </Field>
+          {profile.role === "technician" ? (
+            <>
+              <Field label="Working at today">
+                <select className="field" value={dailyPropertyId} onChange={(event) => setDailyPropertyId(event.target.value)}>
+                  {profile.assignedProperties.map((propertyId) => (
+                    <option key={propertyId} value={propertyId}>
+                      {propertyName(properties, propertyId)}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <div>
+                <span className="label">Assigned property request</span>
+                <div className="grid gap-2">
+                  {properties.map((property) => (
+                    <label key={property.id} className="flex items-center gap-3 rounded-lg border border-[var(--line)] bg-[var(--panel)] p-3 text-sm font-extrabold">
+                      <input
+                        type="checkbox"
+                        checked={requestedPropertyIds.includes(property.id)}
+                        onChange={() => toggleRequestedProfileProperty(property.id)}
+                      />
+                      {property.name}
+                    </label>
+                  ))}
+                </div>
+                {isPendingPropertyRequest(profile) ? (
+                  <p className="mt-2 text-xs font-bold text-[var(--muted)]">
+                    Pending approval: {(profile.pendingPropertyIds ?? []).map((id) => propertyName(properties, id)).join(", ")}
+                  </p>
+                ) : null}
+              </div>
+            </>
+          ) : null}
           <div className="md:col-span-2">
             <Field label="About">
               <textarea
@@ -2908,7 +3083,7 @@ function UsersPanel({ profile, users, properties }: { profile: AppUser; users: A
       </form>
 
       <section className="grid gap-3">
-        <AccountRequestsSection profile={profile} users={users} showEmpty />
+        <AccountRequestsSection profile={profile} users={users} properties={properties} showEmpty />
 
         {approvedUsers.map((user) => (
           <article key={user.id} className="card p-4">

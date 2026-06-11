@@ -2,6 +2,7 @@ import type { Timestamp } from "firebase/firestore";
 
 export type UserRole = "technician" | "property_admin" | "property_manager" | "owner";
 export type AccountStatus = "pending_admin" | "pending_owner" | "approved" | "rejected";
+export type PropertyChangeStatus = "pending" | "approved" | "rejected";
 export type ApprovalStatus = "pending" | "approved" | "rejected" | "needs_info";
 export type IssueStatus = "open" | "monitoring" | "closed";
 export type MaintenanceStatus = "scheduled" | "in_progress" | "completed" | "overdue";
@@ -16,6 +17,14 @@ export type AppUser = {
   accountStatus?: AccountStatus;
   requestedRole?: UserRole;
   approvalRequiredBy?: "admin" | "owner";
+  dailyPropertyId?: string;
+  pendingPropertyIds?: string[];
+  propertyChangeStatus?: PropertyChangeStatus;
+  propertyChangeRequestedAt?: Timestamp;
+  propertyChangeRequestedBy?: string;
+  propertyChangeReviewedBy?: string;
+  propertyChangeReviewedByName?: string;
+  propertyChangeReviewedAt?: Timestamp;
   approvedBy?: string;
   approvedByName?: string;
   approvedAt?: Timestamp;

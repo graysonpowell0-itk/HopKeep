@@ -31,6 +31,7 @@ export type CreateAccountInput = {
   email: string;
   password: string;
   requestedRole: "technician" | "property_manager";
+  assignedProperties: string[];
 };
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -75,6 +76,14 @@ function normalizeProfile(user: User, raw: Record<string, unknown>, id: string):
       : raw.active === false
         ? "pending_admin"
         : "approved";
+  const pendingPropertyIds = Array.isArray(raw.pendingPropertyIds)
+    ? raw.pendingPropertyIds.filter((item) => typeof item === "string")
+    : [];
+  const dailyPropertyId = typeof raw.dailyPropertyId === "string" ? raw.dailyPropertyId : assignedProperties[0] ?? "";
+  const propertyChangeStatus =
+    raw.propertyChangeStatus === "pending" || raw.propertyChangeStatus === "approved" || raw.propertyChangeStatus === "rejected"
+      ? raw.propertyChangeStatus
+      : undefined;
 
   return {
     id,
@@ -87,6 +96,14 @@ function normalizeProfile(user: User, raw: Record<string, unknown>, id: string):
     email: typeof raw.email === "string" && raw.email ? raw.email : user.email || "",
     role,
     assignedProperties,
+    dailyPropertyId,
+    pendingPropertyIds,
+    propertyChangeStatus,
+    propertyChangeRequestedAt: raw.propertyChangeRequestedAt as AppUser["propertyChangeRequestedAt"],
+    propertyChangeRequestedBy: raw.propertyChangeRequestedBy as AppUser["propertyChangeRequestedBy"],
+    propertyChangeReviewedBy: raw.propertyChangeReviewedBy as AppUser["propertyChangeReviewedBy"],
+    propertyChangeReviewedByName: raw.propertyChangeReviewedByName as AppUser["propertyChangeReviewedByName"],
+    propertyChangeReviewedAt: raw.propertyChangeReviewedAt as AppUser["propertyChangeReviewedAt"],
     active: raw.active !== false && accountStatus === "approved",
     accountStatus,
     requestedRole: raw.requestedRole as AppUser["requestedRole"],
@@ -243,6 +260,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const requestedRole = input.requestedRole;
         const accountStatus = requestedRole === "property_manager" ? "pending_owner" : "pending_admin";
         const approvalRequiredBy = requestedRole === "property_manager" ? "owner" : "admin";
+        const managerProperties = ["hampton_inn", "holiday_inn_express", "queens_court_inn"];
+        const requestedProperties = Array.from(new Set(input.assignedProperties)).filter(Boolean);
+        const assignedProperties =
+          requestedRole === "property_manager" ? managerProperties : requestedProperties.length ? requestedProperties : ["hampton_inn"];
 
         try {
           const credential = await createUserWithEmailAndPassword(auth, email, input.password);
@@ -252,10 +273,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             email,
             role: requestedRole,
             requestedRole,
-            assignedProperties:
-              requestedRole === "property_manager"
-                ? ["hampton_inn", "holiday_inn_express", "queens_court_inn"]
-                : ["hampton_inn"],
+            assignedProperties,
+            dailyPropertyId: assignedProperties[0] ?? "",
             active: false,
             accountStatus,
             approvalRequiredBy,
