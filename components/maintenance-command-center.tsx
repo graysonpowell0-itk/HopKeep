@@ -2802,6 +2802,14 @@ function ProfileSettings({ profile, properties }: { profile: AppUser; properties
   );
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const requestableProperties = useMemo(
+    () =>
+      [...seedProperties, ...properties]
+        .filter((property, index, allProperties) => allProperties.findIndex((item) => item.id === property.id) === index)
+        .filter((property) => property.active !== false)
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [properties],
+  );
 
   useEffect(() => {
     setName(profile.name);
@@ -2845,7 +2853,7 @@ function ProfileSettings({ profile, properties }: { profile: AppUser; properties
         photoUrl = await getDownloadURL(imageRef);
       }
 
-      const normalizedRequest = normalizePropertySelection(requestedPropertyIds, properties);
+      const normalizedRequest = normalizePropertySelection(requestedPropertyIds, requestableProperties);
       const profileUpdate: Record<string, unknown> = {
         name: name.trim() || profile.name,
         phone: phone.trim(),
@@ -2873,7 +2881,7 @@ function ProfileSettings({ profile, properties }: { profile: AppUser; properties
       setPhotoFile(null);
       setPreviewUrl(photoUrl);
       setMessage(
-        profile.role === "technician" && !samePropertySelection(normalizePropertySelection(requestedPropertyIds, properties), profile.assignedProperties)
+        profile.role === "technician" && !samePropertySelection(normalizePropertySelection(requestedPropertyIds, requestableProperties), profile.assignedProperties)
           ? "Profile saved. Property changes are pending admin approval."
           : "Profile settings saved.",
       );
@@ -2952,7 +2960,7 @@ function ProfileSettings({ profile, properties }: { profile: AppUser; properties
               <div>
                 <span className="label">Assigned property request</span>
                 <div className="grid gap-2">
-                  {properties.map((property) => (
+                  {requestableProperties.map((property) => (
                     <label key={property.id} className="flex items-center gap-3 rounded-lg border border-[var(--line)] bg-[var(--panel)] p-3 text-sm font-extrabold">
                       <input
                         type="checkbox"
@@ -2965,7 +2973,7 @@ function ProfileSettings({ profile, properties }: { profile: AppUser; properties
                 </div>
                 {isPendingPropertyRequest(profile) ? (
                   <p className="mt-2 text-xs font-bold text-[var(--muted)]">
-                    Pending approval: {(profile.pendingPropertyIds ?? []).map((id) => propertyName(properties, id)).join(", ")}
+                    Pending approval: {(profile.pendingPropertyIds ?? []).map((id) => propertyName(requestableProperties, id)).join(", ")}
                   </p>
                 ) : null}
               </div>
