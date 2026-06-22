@@ -849,6 +849,7 @@ export function MaintenanceCommandCenter() {
   if (!profile) return null;
 
   const navItems = getNavItems(profile.role);
+  const canManagePM = profile.role !== "technician";
   const handleLogout = adminPreview
     ? () => {
         window.location.href = "/";
@@ -900,6 +901,14 @@ export function MaintenanceCommandCenter() {
                     setAddPropertyRequest((request) => request + 1);
                   }}
                 />
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("pm-checklists")}
+                  className="top-control inline-flex min-h-12 items-center justify-center gap-2 rounded-lg px-4 text-sm font-extrabold"
+                >
+                  {canManagePM ? <Upload size={18} /> : <ClipboardList size={18} />}
+                  {canManagePM ? "Upload PM" : "PM Checklist"}
+                </button>
                 <ThemeToggle theme={theme} toggleTheme={toggleTheme} />
                 <span className="top-control inline-flex min-h-12 items-center gap-2 rounded-full px-5 py-2 text-sm font-extrabold">
                   <UserCog size={19} />
@@ -907,6 +916,14 @@ export function MaintenanceCommandCenter() {
                 </span>
               </div>
               <div className="flex items-center gap-2 lg:hidden">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("pm-checklists")}
+                  className="top-control inline-flex h-11 w-11 items-center justify-center rounded-lg"
+                  aria-label={canManagePM ? "Upload PM checklist" : "Open PM checklist"}
+                >
+                  {canManagePM ? <Upload size={19} /> : <ClipboardList size={19} />}
+                </button>
                 <ThemeToggle theme={theme} toggleTheme={toggleTheme} compact />
                 <button
                   type="button"
@@ -1621,9 +1638,9 @@ function Dashboard({
             onClick={() => setActiveTab("daily-log")}
           />
           <QuickAction
-            title="PM checklists"
-            text="Upload templates and approve completed room PM work."
-            icon={<ClipboardList size={22} />}
+            title="Upload PM checklist PDF"
+            text="Upload the property PM checklist, convert it, and approve completed room PM work."
+            icon={<Upload size={22} />}
             onClick={() => setActiveTab("pm-checklists")}
           />
         </div>
