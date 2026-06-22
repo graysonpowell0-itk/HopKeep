@@ -23,6 +23,7 @@ import {
   ChevronDown,
   ChevronRight,
   ClipboardCheck,
+  ClipboardList,
   Clock,
   Download,
   DoorOpen,
@@ -33,11 +34,14 @@ import {
   LogOut,
   Menu,
   Moon,
+  Play,
   Plus,
   Search,
+  Send,
   Settings,
   ShieldCheck,
   Sun,
+  Upload,
   UserCog,
   Wrench,
   X,
@@ -52,6 +56,11 @@ import {
   type AppUser,
   type ApprovalStatus,
   type OutOfOrderIssue,
+  type PMChecklistItem,
+  type PMChecklistRun,
+  type PMChecklistRunItem,
+  type PMChecklistRunStatus,
+  type PMChecklistTemplate,
   type Property,
   type RepairLog,
   type ScheduledMaintenance,
@@ -67,6 +76,7 @@ type TabKey =
   | "out-of-order"
   | "approvals"
   | "daily-log"
+  | "pm-checklists"
   | "calendar"
   | "properties"
   | "users"
@@ -93,6 +103,13 @@ const approvalLabels: Record<ApprovalStatus, string> = {
   approved: "Approved",
   rejected: "Rejected",
   needs_info: "Needs info",
+};
+
+const pmRunLabels: Record<PMChecklistRunStatus, string> = {
+  in_progress: "In progress",
+  pending_approval: "Pending approval",
+  approved: "Complete",
+  rejected: "Needs revision",
 };
 
 function previewTimestamp(isoDate: string) {
@@ -291,6 +308,89 @@ const previewMaintenance: ScheduledMaintenance[] = [
   },
 ];
 
+const previewPMTemplates: PMChecklistTemplate[] = [
+  {
+    id: "preview-pm-template-1",
+    propertyId: "hampton_inn",
+    title: "Guest Room PM Checklist",
+    sourcePdfName: "hampton-room-pm.pdf",
+    sourcePdfUrl: "#",
+    items: [
+      { id: "item-1", label: "Inspect PTAC filters and clean as needed" },
+      { id: "item-2", label: "Test smoke detector and emergency lighting" },
+      { id: "item-3", label: "Check plumbing fixtures for leaks" },
+      { id: "item-4", label: "Verify door lock, latch, and deadbolt operation" },
+    ],
+    uploadedBy: "preview-admin",
+    uploadedByName: "Morgan Ellis",
+    active: true,
+    createdAt: previewTimestamp("2026-05-22T08:00"),
+  },
+];
+
+const previewPMRuns: PMChecklistRun[] = [
+  {
+    id: "preview-pm-run-1",
+    propertyId: "hampton_inn",
+    templateId: "preview-pm-template-1",
+    templateTitle: "Guest Room PM Checklist",
+    roomNumber: "101",
+    status: "in_progress",
+    items: previewPMTemplates[0].items.map((item, index) => ({
+      ...item,
+      checked: index < 2,
+      notes: "",
+    })),
+    startedBy: "preview-tech-1",
+    startedByName: "Avery Daniels",
+    startedAt: previewTimestamp("2026-05-29T08:30"),
+    createdAt: previewTimestamp("2026-05-29T08:30"),
+  },
+  {
+    id: "preview-pm-run-2",
+    propertyId: "hampton_inn",
+    templateId: "preview-pm-template-1",
+    templateTitle: "Guest Room PM Checklist",
+    roomNumber: "102",
+    status: "pending_approval",
+    items: previewPMTemplates[0].items.map((item) => ({
+      ...item,
+      checked: true,
+      notes: "",
+    })),
+    startedBy: "preview-tech-1",
+    startedByName: "Avery Daniels",
+    submittedBy: "preview-tech-1",
+    submittedByName: "Avery Daniels",
+    startedAt: previewTimestamp("2026-05-28T09:00"),
+    submittedAt: previewTimestamp("2026-05-28T10:15"),
+    createdAt: previewTimestamp("2026-05-28T09:00"),
+  },
+  {
+    id: "preview-pm-run-3",
+    propertyId: "hampton_inn",
+    templateId: "preview-pm-template-1",
+    templateTitle: "Guest Room PM Checklist",
+    roomNumber: "103",
+    status: "approved",
+    items: previewPMTemplates[0].items.map((item) => ({
+      ...item,
+      checked: true,
+      notes: "",
+    })),
+    startedBy: "preview-tech-1",
+    startedByName: "Avery Daniels",
+    submittedBy: "preview-tech-1",
+    submittedByName: "Avery Daniels",
+    reviewedBy: "preview-admin",
+    reviewedByName: "Morgan Ellis",
+    startedAt: previewTimestamp("2026-05-27T09:00"),
+    submittedAt: previewTimestamp("2026-05-27T10:15"),
+    reviewedAt: previewTimestamp("2026-05-27T11:00"),
+    createdAt: previewTimestamp("2026-05-27T09:00"),
+  },
+];
+
 function useAdminPreviewMode() {
   const [enabled, setEnabled] = useState(false);
 
@@ -305,7 +405,7 @@ function useAdminPreviewMode() {
 
 function statusClass(status: string) {
   if (["rejected", "out_of_order", "overdue", "open"].includes(status)) return "status-red";
-  if (["pending", "needs_info", "monitoring", "in_progress"].includes(status)) return "status-yellow";
+  if (["pending", "pending_approval", "needs_info", "monitoring", "in_progress"].includes(status)) return "status-yellow";
   if (["approved", "completed", "fixed"].includes(status)) return "status-green";
   if (["scheduled", "needs_vendor"].includes(status)) return "status-blue";
   return "status-gray";
@@ -619,6 +719,21 @@ export function MaintenanceCommandCenter() {
     [scheduleQuery],
   );
 
+  const pmTemplateQuery = useMemo(
+    () => (adminPreview || !profile ? null : propertyScopedQuery("pmChecklistTemplates", profile)),
+    [adminPreview, profile],
+  );
+  const { items: livePMTemplates, error: livePMTemplateError } = useLiveCollection<PMChecklistTemplate>(
+    () => pmTemplateQuery,
+    [pmTemplateQuery],
+  );
+
+  const pmRunQuery = useMemo(
+    () => (adminPreview || !profile ? null : propertyScopedQuery("pmChecklistRuns", profile)),
+    [adminPreview, profile],
+  );
+  const { items: livePMRuns, error: livePMRunError } = useLiveCollection<PMChecklistRun>(() => pmRunQuery, [pmRunQuery]);
+
   const usersQuery = useMemo(() => {
     if (adminPreview) return null;
     if (!db || !profile || !["property_manager", "owner"].includes(profile.role)) return null;
@@ -630,11 +745,15 @@ export function MaintenanceCommandCenter() {
   const repairLogs = adminPreview ? previewRepairLogs : liveRepairLogs;
   const issues = adminPreview ? previewIssues : liveIssues;
   const scheduledMaintenance = adminPreview ? previewMaintenance : liveScheduledMaintenance;
+  const pmTemplates = adminPreview ? previewPMTemplates : livePMTemplates;
+  const pmRuns = adminPreview ? previewPMRuns : livePMRuns;
   const users = adminPreview ? previewUsers : liveUsers;
   const propertyError = adminPreview ? null : livePropertyError;
   const repairError = adminPreview ? null : liveRepairError;
   const issueError = adminPreview ? null : liveIssueError;
   const scheduleError = adminPreview ? null : liveScheduleError;
+  const pmTemplateError = adminPreview ? null : livePMTemplateError;
+  const pmRunError = adminPreview ? null : livePMRunError;
 
   useEffect(() => {
     if (!adminPreview) return;
@@ -686,6 +805,20 @@ export function MaintenanceCommandCenter() {
         })
         .sort((a, b) => a.dueDate.localeCompare(b.dueDate)),
     [scheduledMaintenance, selectedProperty, profile],
+  );
+  const visiblePMTemplates = useMemo(
+    () =>
+      pmTemplates
+        .filter((template) => matchesProperty(selectedProperty, template.propertyId))
+        .sort((a, b) => timestampValue(b.createdAt) - timestampValue(a.createdAt)),
+    [pmTemplates, selectedProperty],
+  );
+  const visiblePMRuns = useMemo(
+    () =>
+      pmRuns
+        .filter((run) => matchesProperty(selectedProperty, run.propertyId))
+        .sort((a, b) => timestampValue(b.createdAt) - timestampValue(a.createdAt)),
+    [pmRuns, selectedProperty],
   );
 
   if (!adminPreview && auth.loading) {
@@ -827,7 +960,7 @@ export function MaintenanceCommandCenter() {
           </header>
 
           <div className="mx-auto max-w-7xl px-4 py-6 lg:px-8">
-            <ErrorStrip errors={[propertyError, repairError, issueError, scheduleError, liveUserError]} />
+            <ErrorStrip errors={[propertyError, repairError, issueError, scheduleError, pmTemplateError, pmRunError, liveUserError]} />
             {activeTab === "dashboard" ? (
               <Dashboard
                 profile={profile}
@@ -835,6 +968,7 @@ export function MaintenanceCommandCenter() {
                 repairLogs={visibleRepairLogs}
                 issues={visibleIssues}
                 maintenance={visibleMaintenance}
+                pmRuns={visiblePMRuns}
                 users={users}
                 setActiveTab={setActiveTab}
               />
@@ -851,6 +985,9 @@ export function MaintenanceCommandCenter() {
               <ApprovalQueue profile={profile} properties={activeProperties} logs={visibleRepairLogs} users={users} />
             ) : null}
             {activeTab === "daily-log" ? <DailyLog properties={activeProperties} logs={visibleRepairLogs} /> : null}
+            {activeTab === "pm-checklists" ? (
+              <PMChecklistPanel profile={profile} properties={activeProperties} templates={visiblePMTemplates} runs={visiblePMRuns} />
+            ) : null}
             {activeTab === "calendar" ? (
               <CalendarPanel profile={profile} properties={activeProperties} tasks={visibleMaintenance} users={users} />
             ) : null}
@@ -1255,6 +1392,7 @@ function getNavItems(role: UserRole) {
       { key: "new-log" as TabKey, label: "New Repair Log", shortLabel: "New", icon: <Plus size={19} /> },
       { key: "my-logs" as TabKey, label: "My Logs", shortLabel: "Logs", icon: <FileText size={19} /> },
       { key: "maintenance" as TabKey, label: "Assigned Maintenance", shortLabel: "Tasks", icon: <CalendarDays size={19} /> },
+      { key: "pm-checklists" as TabKey, label: "PM Checklist", shortLabel: "PM", icon: <ClipboardList size={19} /> },
     ];
   }
   const admin = [
@@ -1262,6 +1400,7 @@ function getNavItems(role: UserRole) {
     { key: "out-of-order" as TabKey, label: "Out-of-Order", shortLabel: "OOO", icon: <DoorOpen size={19} /> },
     { key: "approvals" as TabKey, label: "Approval Queue", shortLabel: "Approve", icon: <ClipboardCheck size={19} /> },
     { key: "daily-log" as TabKey, label: "Daily Log", shortLabel: "Daily", icon: <FileText size={19} /> },
+    { key: "pm-checklists" as TabKey, label: "PM Checklist", shortLabel: "PM", icon: <ClipboardList size={19} /> },
     { key: "calendar" as TabKey, label: "Calendar", shortLabel: "Cal", icon: <CalendarDays size={19} /> },
   ];
   if (role === "property_manager" || role === "owner") {
@@ -1403,6 +1542,7 @@ function Dashboard({
   repairLogs,
   issues,
   maintenance,
+  pmRuns,
   users,
   setActiveTab,
 }: {
@@ -1411,6 +1551,7 @@ function Dashboard({
   repairLogs: RepairLog[];
   issues: OutOfOrderIssue[];
   maintenance: ScheduledMaintenance[];
+  pmRuns: PMChecklistRun[];
   users: AppUser[];
   setActiveTab: (tab: TabKey) => void;
 }) {
@@ -1421,6 +1562,7 @@ function Dashboard({
   const needsFollowUp = repairLogs.filter((log) => log.approvalStatus === "needs_info").length;
   const outOfOrder = issues.filter((issue) => issue.status !== "closed").length;
   const due = maintenance.filter((task) => task.status !== "completed").length;
+  const pendingPM = pmRuns.filter((run) => run.status === "pending_approval").length;
   const pendingAccounts = users.filter(isPendingUserRequest).length;
 
   return (
@@ -1434,6 +1576,7 @@ function Dashboard({
         <StatCard label="Needs follow-up" value={needsFollowUp} tone="rejected" icon={<AlertTriangle size={20} />} />
         <StatCard label="Out-of-order" value={outOfOrder} tone="open" icon={<DoorOpen size={20} />} />
         <StatCard label="Scheduled work" value={due} tone="scheduled" icon={<CalendarDays size={20} />} />
+        <StatCard label="PM approvals" value={pendingPM} tone="pending" icon={<ClipboardList size={20} />} />
       </div>
 
       {profile.role === "technician" ? (
@@ -1449,6 +1592,12 @@ function Dashboard({
             text="See scheduled work for your assigned hotels."
             icon={<CalendarDays size={22} />}
             onClick={() => setActiveTab("maintenance")}
+          />
+          <QuickAction
+            title="PM checklist"
+            text="Start or continue a room preventative maintenance checklist."
+            icon={<ClipboardList size={22} />}
+            onClick={() => setActiveTab("pm-checklists")}
           />
         </div>
       ) : (
@@ -1471,6 +1620,12 @@ function Dashboard({
             icon={<FileText size={22} />}
             onClick={() => setActiveTab("daily-log")}
           />
+          <QuickAction
+            title="PM checklists"
+            text="Upload templates and approve completed room PM work."
+            icon={<ClipboardList size={22} />}
+            onClick={() => setActiveTab("pm-checklists")}
+          />
         </div>
       )}
 
@@ -1484,6 +1639,7 @@ function Dashboard({
           {properties.map((property) => {
             const propertyLogs = repairLogs.filter((log) => log.propertyId === property.id);
             const propertyIssues = issues.filter((issue) => issue.propertyId === property.id && issue.status !== "closed");
+            const propertyPMRuns = pmRuns.filter((run) => run.propertyId === property.id && run.status === "pending_approval");
             return (
               <article key={property.id} className="card p-4">
                 <div className="flex items-start justify-between gap-3">
@@ -1493,10 +1649,11 @@ function Dashboard({
                   </div>
                   <Badge tone={property.active ? "approved" : "closed"}>{property.active ? "Active" : "Inactive"}</Badge>
                 </div>
-                <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+                <div className="mt-4 grid grid-cols-4 gap-2 text-center">
                   <MiniMetric label="Rooms" value={property.totalRooms || "-"} />
                   <MiniMetric label="Pending" value={propertyLogs.filter((log) => log.approvalStatus === "pending").length} />
                   <MiniMetric label="OOO" value={propertyIssues.length} />
+                  <MiniMetric label="PM" value={propertyPMRuns.length} />
                 </div>
               </article>
             );
@@ -2175,6 +2332,542 @@ function DailyLog({ logs, properties }: { logs: RepairLog[]; properties: Propert
         </div>
       </div>
       <LogList logs={approved} properties={properties} />
+    </section>
+  );
+}
+
+type PdfTextChunk = {
+  str?: string;
+  transform?: number[];
+};
+
+function lineFromPdfTextChunks(chunks: PdfTextChunk[]) {
+  return chunks
+    .sort((a, b) => (a.transform?.[4] ?? 0) - (b.transform?.[4] ?? 0))
+    .map((chunk) => chunk.str?.trim() ?? "")
+    .filter(Boolean)
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizePMChecklistLine(line: string) {
+  return line
+    .replace(/^[\u2610\u2611\u2612\u25a1\u25a2\u25a3\u25a4\u25a5\u25a6\u25a7\u25a8\u25a9\u25aa\u25ab\u25fb\u25fc\u25fd\u25fe\u2b1c\u2b1b\[\]\sxX-]+/, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function buildPMChecklistItems(lines: string[]): PMChecklistItem[] {
+  const ignored = [/preventive maintenance/i, /reference guide/i, /^page \d+/i];
+  let currentSection = "";
+
+  const labels = lines.reduce<string[]>((acc, line) => {
+    const clean = normalizePMChecklistLine(line);
+    if (!clean || ignored.some((pattern) => pattern.test(clean))) return acc;
+
+    const hasCheckbox = /^[\s]*[\u2610\u2611\u2612\u25a1\u25a2\u25a3\u25a4\u25a5\u25a6\u25a7\u25a8\u25a9\u25aa\u25ab\u25fb\u25fc\u25fd\u25fe\u2b1c\u2b1b\[]/.test(line);
+    const likelySection = !hasCheckbox && clean.length < 40 && clean.split(/\s+/).length <= 4 && !/[.,;:()]/.test(clean);
+    if (likelySection) {
+      currentSection = clean;
+      return acc;
+    }
+
+    const label = currentSection && !clean.startsWith(`${currentSection}:`) ? `${currentSection}: ${clean}` : clean;
+    if (!acc.includes(label)) acc.push(label);
+    return acc;
+  }, []);
+
+  return labels.map((label, index) => ({
+    id: `item-${index + 1}`,
+    label,
+  }));
+}
+
+async function extractPMChecklistItemsFromPdf(file: File): Promise<PMChecklistItem[]> {
+  const pdfjs = await import("pdfjs-dist");
+  pdfjs.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.mjs", import.meta.url).toString();
+
+  const data = new Uint8Array(await file.arrayBuffer());
+  const pdf = await pdfjs.getDocument({ data }).promise;
+  const lines: string[] = [];
+
+  for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+    const page = await pdf.getPage(pageNumber);
+    const textContent = await page.getTextContent();
+    const rows = (textContent.items as PdfTextChunk[]).reduce<PdfTextChunk[][]>((acc, chunk) => {
+      const text = chunk.str?.trim();
+      const y = chunk.transform?.[5];
+      if (!text || typeof y !== "number") return acc;
+      const existingRow = acc.find((row) => Math.abs((row[0]?.transform?.[5] ?? 0) - y) < 3);
+      if (existingRow) existingRow.push(chunk);
+      else acc.push([chunk]);
+      return acc;
+    }, []);
+
+    rows
+      .sort((a, b) => (b[0]?.transform?.[5] ?? 0) - (a[0]?.transform?.[5] ?? 0))
+      .map(lineFromPdfTextChunks)
+      .filter(Boolean)
+      .forEach((line) => lines.push(line));
+  }
+
+  return buildPMChecklistItems(lines);
+}
+
+function generatedRoomNumbers(totalRooms: number) {
+  const count = Math.max(0, Number(totalRooms || 0));
+  return Array.from({ length: count }, (_, index) => {
+    const floor = Math.floor(index / 20) + 1;
+    const room = (index % 20) + 1;
+    return `${floor}${String(room).padStart(2, "0")}`;
+  });
+}
+
+function latestPMRunForRoom(runs: PMChecklistRun[], templateId: string, roomNumber: string) {
+  return runs
+    .filter((run) => run.templateId === templateId && run.roomNumber === roomNumber)
+    .sort((a, b) => timestampValue(b.createdAt) - timestampValue(a.createdAt))[0];
+}
+
+function PMChecklistPanel({
+  profile,
+  properties,
+  templates,
+  runs,
+}: {
+  profile: AppUser;
+  properties: Property[];
+  templates: PMChecklistTemplate[];
+  runs: PMChecklistRun[];
+}) {
+  const canManagePM = profile.role !== "technician";
+  const [propertyId, setPropertyId] = useState(preferredPropertyId(profile, properties));
+  const [selectedTemplateId, setSelectedTemplateId] = useState("");
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+  const [title, setTitle] = useState("Guest Room PM Checklist");
+  const [sourcePdf, setSourcePdf] = useState<File | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  const property = properties.find((item) => item.id === propertyId) ?? properties[0];
+  const propertyTemplates = templates.filter((template) => template.propertyId === property?.id && template.active !== false);
+  const selectedTemplate =
+    propertyTemplates.find((template) => template.id === selectedTemplateId) ?? propertyTemplates[0] ?? null;
+  const propertyRuns = runs.filter((run) => run.propertyId === property?.id);
+  const selectedRun = selectedRunId ? runs.find((run) => run.id === selectedRunId) ?? null : null;
+  const rooms = generatedRoomNumbers(property?.totalRooms ?? 0);
+  const pendingRuns = runs.filter((run) => run.status === "pending_approval");
+
+  useEffect(() => {
+    const preferred = preferredPropertyId(profile, properties);
+    if (!propertyId && preferred) setPropertyId(preferred);
+  }, [profile, properties, propertyId]);
+
+  useEffect(() => {
+    if (!selectedTemplate && propertyTemplates[0]) setSelectedTemplateId(propertyTemplates[0].id);
+    if (selectedTemplate && !propertyTemplates.some((template) => template.id === selectedTemplate.id)) {
+      setSelectedTemplateId(propertyTemplates[0]?.id ?? "");
+    }
+  }, [selectedTemplate, propertyTemplates]);
+
+  async function uploadTemplate(event: FormEvent) {
+    event.preventDefault();
+    if (!property?.id || !sourcePdf) return;
+
+    setBusyId("template");
+    setMessage(null);
+    try {
+      const items = await extractPMChecklistItemsFromPdf(sourcePdf);
+      if (!items.length) {
+        setMessage("I could not find checklist rows in that PDF. Export a text-based PDF with checkbox rows, not a scanned image.");
+        return;
+      }
+
+      if (!db || !storage) {
+        setMessage(`Found ${items.length} checklist items. Firebase storage is not configured in this local preview, so the PDF cannot be saved yet.`);
+        return;
+      }
+
+      const activeDb = db;
+      const activeStorage = storage;
+      const cleanName = sourcePdf.name.replace(/[^\w.-]+/g, "_");
+      const pdfRef = ref(activeStorage, `pmChecklists/${property.id}/templates/${Date.now()}-${cleanName}`);
+      await uploadBytes(pdfRef, sourcePdf, { contentType: sourcePdf.type || "application/pdf" });
+      const sourcePdfUrl = await getDownloadURL(pdfRef);
+      const templateRef = doc(collection(activeDb, "pmChecklistTemplates"));
+      await setDoc(templateRef, {
+        propertyId: property.id,
+        title: title.trim() || "Guest Room PM Checklist",
+        sourcePdfName: sourcePdf.name,
+        sourcePdfUrl,
+        items,
+        uploadedBy: profile.id,
+        uploadedByName: profile.name,
+        active: true,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      setSelectedTemplateId(templateRef.id);
+      setSourcePdf(null);
+      setMessage(`PM checklist uploaded and ${items.length} checklist items were created from the PDF.`);
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Unable to upload PM checklist.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function startRoomChecklist(roomNumber: string) {
+    if (!property?.id || !selectedTemplate) return;
+    const existingRun = latestPMRunForRoom(propertyRuns, selectedTemplate.id, roomNumber);
+    if (existingRun) {
+      setSelectedRunId(existingRun.id);
+      return;
+    }
+    if (!db) return;
+
+    const activeDb = db;
+    const runRef = doc(collection(activeDb, "pmChecklistRuns"));
+    setBusyId(roomNumber);
+    try {
+      await setDoc(runRef, {
+        propertyId: property.id,
+        templateId: selectedTemplate.id,
+        templateTitle: selectedTemplate.title,
+        roomNumber,
+        status: "in_progress",
+        items: selectedTemplate.items.map((item) => ({ ...item, checked: false, notes: "" })),
+        startedBy: profile.id,
+        startedByName: profile.name,
+        startedAt: serverTimestamp(),
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      setSelectedRunId(runRef.id);
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  if (!property) {
+    return <EmptyState title="No properties available" text="Add or assign a property before creating PM checklists." />;
+  }
+
+  return (
+    <section className="space-y-5">
+      <div className="grid gap-5 xl:grid-cols-[420px_1fr]">
+        {canManagePM ? (
+          <form onSubmit={uploadTemplate} className="card h-fit p-4">
+            <SectionTitle title="Upload PM Checklist PDF" icon={<Upload size={20} />} />
+            {message ? <div className="mb-4 rounded-lg border border-[var(--line)] bg-[var(--soft)] p-3 text-sm font-bold text-[var(--text-soft)]">{message}</div> : null}
+            <div className="grid gap-4">
+              <Field label="Property">
+                <select className="field" value={property.id} onChange={(event) => setPropertyId(event.target.value)} required>
+                  {properties.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.name}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Checklist title">
+                <input className="field" value={title} onChange={(event) => setTitle(event.target.value)} required />
+              </Field>
+              <Field label="Source PDF">
+                <input
+                  className="field"
+                  type="file"
+                  accept="application/pdf"
+                  onChange={(event) => setSourcePdf(event.target.files?.[0] ?? null)}
+                  required
+                />
+              </Field>
+              <PrimaryButton type="submit" disabled={busyId === "template" || !sourcePdf} icon={<Upload size={17} />}>
+                {busyId === "template" ? "Reading PDF..." : "Upload checklist"}
+              </PrimaryButton>
+            </div>
+          </form>
+        ) : null}
+
+        <div className="space-y-4">
+          <div className="card p-4">
+            <div className="grid gap-4 md:grid-cols-2">
+              <Field label="Property">
+                <select className="field" value={property.id} onChange={(event) => setPropertyId(event.target.value)} required>
+                  {properties.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.name}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="PM checklist template">
+                <select
+                  className="field"
+                  value={selectedTemplate?.id ?? ""}
+                  onChange={(event) => setSelectedTemplateId(event.target.value)}
+                  disabled={!propertyTemplates.length}
+                >
+                  {propertyTemplates.length ? (
+                    propertyTemplates.map((template) => (
+                      <option key={template.id} value={template.id}>
+                        {template.title}
+                      </option>
+                    ))
+                  ) : (
+                    <option value="">No PM checklist uploaded</option>
+                  )}
+                </select>
+              </Field>
+            </div>
+            {selectedTemplate ? (
+              <div className="mt-4 flex flex-col gap-2 rounded-lg border border-[var(--line)] bg-[var(--soft)] p-3 text-sm font-bold text-[var(--text-soft)] sm:flex-row sm:items-center sm:justify-between">
+                <span>{selectedTemplate.items.length} interactive checklist items ready for each room.</span>
+                {selectedTemplate.sourcePdfUrl && selectedTemplate.sourcePdfUrl !== "#" ? (
+                  <a href={selectedTemplate.sourcePdfUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 font-black text-[var(--brand)]">
+                    <FileText size={17} />
+                    View source PDF
+                  </a>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+
+          {selectedRun ? (
+            <PMChecklistRunEditor profile={profile} run={selectedRun} onClose={() => setSelectedRunId(null)} />
+          ) : null}
+
+          <div className="card p-4">
+            <SectionTitle title="Room PM Status" icon={<ClipboardList size={20} />} />
+            {selectedTemplate && rooms.length ? (
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                {rooms.map((roomNumber) => {
+                  const run = latestPMRunForRoom(propertyRuns, selectedTemplate.id, roomNumber);
+                  const status = run?.status;
+                  const disabled = status === "approved" || busyId === roomNumber;
+                  return (
+                    <article key={roomNumber} className="rounded-lg border border-[var(--line)] bg-[var(--panel)] p-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-black uppercase tracking-wide text-[var(--muted)]">Room</p>
+                          <h3 className="text-xl font-black text-[var(--text)]">{roomNumber}</h3>
+                        </div>
+                        {status ? <Badge tone={status}>{pmRunLabels[status]}</Badge> : <Badge tone="scheduled">Not started</Badge>}
+                      </div>
+                      <button
+                        type="button"
+                        disabled={disabled}
+                        onClick={() => startRoomChecklist(roomNumber)}
+                        className="mt-3 inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-lg border border-[var(--line)] bg-[var(--soft)] px-3 text-sm font-black text-[var(--text)] transition hover:border-[var(--brand)] disabled:cursor-not-allowed disabled:opacity-65"
+                      >
+                        {status === "approved" ? <Check size={16} /> : <Play size={16} />}
+                        {status ? pmRunLabels[status] : "Start PM"}
+                      </button>
+                    </article>
+                  );
+                })}
+              </div>
+            ) : (
+              <EmptyState title="No room PM checklist ready" text="Upload a PM checklist PDF and set the property's total room count to generate room buttons." />
+            )}
+          </div>
+        </div>
+      </div>
+
+      {canManagePM ? <PMApprovalSection profile={profile} runs={pendingRuns} properties={properties} /> : null}
+    </section>
+  );
+}
+
+function PMChecklistRunEditor({
+  profile,
+  run,
+  onClose,
+}: {
+  profile: AppUser;
+  run: PMChecklistRun;
+  onClose: () => void;
+}) {
+  const [items, setItems] = useState<PMChecklistRunItem[]>(run.items ?? []);
+  const [busy, setBusy] = useState(false);
+  const editable = run.status === "in_progress" || run.status === "rejected";
+  const allChecked = items.length > 0 && items.every((item) => item.checked);
+
+  useEffect(() => {
+    setItems(run.items ?? []);
+  }, [run.id, run.items]);
+
+  async function saveRun(nextStatus: PMChecklistRunStatus) {
+    if (!db) return;
+    const activeDb = db;
+    setBusy(true);
+    try {
+      await updateDoc(doc(activeDb, "pmChecklistRuns", run.id), {
+        items,
+        status: nextStatus,
+        submittedBy: nextStatus === "pending_approval" ? profile.id : run.submittedBy ?? "",
+        submittedByName: nextStatus === "pending_approval" ? profile.name : run.submittedByName ?? "",
+        submittedAt: nextStatus === "pending_approval" ? serverTimestamp() : run.submittedAt ?? null,
+        updatedAt: serverTimestamp(),
+      });
+      if (nextStatus === "pending_approval") onClose();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <article className="card p-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="font-black text-[var(--text)]">Room {run.roomNumber} PM checklist</h3>
+            <Badge tone={run.status}>{pmRunLabels[run.status]}</Badge>
+          </div>
+          <p className="mt-1 text-sm font-bold text-[var(--muted)]">
+            {run.templateTitle} - started by {run.startedByName}
+          </p>
+        </div>
+        <SecondaryButton onClick={onClose} icon={<X size={17} />}>
+          Close
+        </SecondaryButton>
+      </div>
+
+      <div className="mt-4 grid gap-3">
+        {items.map((item, index) => (
+          <div key={item.id} className="rounded-lg border border-[var(--line)] bg-[var(--soft)] p-3">
+            <label className="flex items-start gap-3 text-sm font-extrabold text-[var(--text)]">
+              <input
+                className="mt-1"
+                type="checkbox"
+                checked={item.checked}
+                disabled={!editable}
+                onChange={(event) =>
+                  setItems((current) =>
+                    current.map((entry, itemIndex) => (itemIndex === index ? { ...entry, checked: event.target.checked } : entry)),
+                  )
+                }
+              />
+              <span>{item.label}</span>
+            </label>
+            <textarea
+              className="field mt-3 min-h-16"
+              value={item.notes ?? ""}
+              disabled={!editable}
+              placeholder="Optional notes"
+              onChange={(event) =>
+                setItems((current) =>
+                  current.map((entry, itemIndex) => (itemIndex === index ? { ...entry, notes: event.target.value } : entry)),
+                )
+              }
+            />
+          </div>
+        ))}
+      </div>
+
+      {run.adminNotes ? (
+        <div className="mt-4 rounded-lg border border-[var(--warning)] bg-[var(--warning-soft)] p-3 text-sm font-bold text-[var(--warning)]">
+          Admin notes: {run.adminNotes}
+        </div>
+      ) : null}
+
+      {editable ? (
+        <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:justify-end">
+          <SecondaryButton disabled={busy} onClick={() => saveRun("in_progress")} icon={<Check size={17} />}>
+            Save progress
+          </SecondaryButton>
+          <PrimaryButton disabled={busy || !allChecked} onClick={() => saveRun("pending_approval")} icon={<Send size={17} />}>
+            Submit for approval
+          </PrimaryButton>
+        </div>
+      ) : null}
+    </article>
+  );
+}
+
+function PMApprovalSection({
+  profile,
+  runs,
+  properties,
+}: {
+  profile: AppUser;
+  runs: PMChecklistRun[];
+  properties: Property[];
+}) {
+  const [notes, setNotes] = useState<Record<string, string>>({});
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  async function review(run: PMChecklistRun, status: "approved" | "rejected") {
+    if (!db) return;
+    const activeDb = db;
+    setBusyId(run.id);
+    try {
+      await updateDoc(doc(activeDb, "pmChecklistRuns", run.id), {
+        status,
+        reviewedBy: profile.id,
+        reviewedByName: profile.name,
+        reviewedAt: serverTimestamp(),
+        adminNotes: notes[run.id] ?? "",
+        updatedAt: serverTimestamp(),
+      });
+      setNotes((current) => ({ ...current, [run.id]: "" }));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  return (
+    <section className="card p-4">
+      <SectionTitle title="PM Completion Approvals" icon={<ShieldCheck size={20} />} />
+      {runs.length ? (
+        <div className="grid gap-3">
+          {runs.map((run) => (
+            <article key={run.id} className="rounded-lg border border-[var(--line)] bg-[var(--soft)] p-3">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="font-black text-[var(--text)]">Room {run.roomNumber}</h3>
+                    <Badge tone={run.status}>{pmRunLabels[run.status]}</Badge>
+                  </div>
+                  <p className="mt-1 text-sm font-bold text-[var(--muted)]">
+                    {propertyName(properties, run.propertyId)} - {run.templateTitle} - submitted by {run.submittedByName || run.startedByName}
+                  </p>
+                </div>
+                <p className="text-xs font-bold text-[var(--muted)]">{formatShortDate(run.submittedAt ?? run.updatedAt)}</p>
+              </div>
+              <div className="mt-3 grid gap-2 md:grid-cols-2">
+                {run.items.map((item) => (
+                  <div key={item.id} className="rounded-lg border border-[var(--line)] bg-[var(--panel)] p-3 text-sm">
+                    <p className="font-extrabold text-[var(--text)]">
+                      {item.checked ? "Done:" : "Open:"} {item.label}
+                    </p>
+                    {item.notes ? <p className="mt-1 font-medium text-[var(--muted)]">{item.notes}</p> : null}
+                  </div>
+                ))}
+              </div>
+              <Field label="Admin notes">
+                <textarea
+                  className="field min-h-20"
+                  value={notes[run.id] ?? ""}
+                  onChange={(event) => setNotes((current) => ({ ...current, [run.id]: event.target.value }))}
+                  placeholder="Required if rejecting"
+                />
+              </Field>
+              <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:justify-end">
+                <DangerButton disabled={busyId === run.id} onClick={() => review(run, "rejected")}>
+                  Reject
+                </DangerButton>
+                <PrimaryButton disabled={busyId === run.id} onClick={() => review(run, "approved")} icon={<Check size={17} />}>
+                  Approve completion
+                </PrimaryButton>
+              </div>
+            </article>
+          ))}
+        </div>
+      ) : (
+        <p className="text-sm font-medium text-[var(--muted)]">Completed room PM checklists awaiting approval will appear here.</p>
+      )}
     </section>
   );
 }

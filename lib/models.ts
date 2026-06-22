@@ -6,6 +6,7 @@ export type PropertyChangeStatus = "pending" | "approved" | "rejected";
 export type ApprovalStatus = "pending" | "approved" | "rejected" | "needs_info";
 export type IssueStatus = "open" | "monitoring" | "closed";
 export type MaintenanceStatus = "scheduled" | "in_progress" | "completed" | "overdue";
+export type PMChecklistRunStatus = "in_progress" | "pending_approval" | "approved" | "rejected";
 
 export type AppUser = {
   id: string;
@@ -122,6 +123,52 @@ export type ScheduledMaintenance = {
   requiresPhotos: boolean;
   photoUrls: string[];
   notes?: string;
+  createdAt?: Timestamp;
+  updatedAt?: Timestamp;
+};
+
+export type PMChecklistItem = {
+  id: string;
+  label: string;
+};
+
+export type PMChecklistRunItem = PMChecklistItem & {
+  checked: boolean;
+  notes?: string;
+};
+
+export type PMChecklistTemplate = {
+  id: string;
+  propertyId: string;
+  title: string;
+  sourcePdfName: string;
+  sourcePdfUrl: string;
+  items: PMChecklistItem[];
+  uploadedBy: string;
+  uploadedByName: string;
+  active: boolean;
+  createdAt?: Timestamp;
+  updatedAt?: Timestamp;
+};
+
+export type PMChecklistRun = {
+  id: string;
+  propertyId: string;
+  templateId: string;
+  templateTitle: string;
+  roomNumber: string;
+  status: PMChecklistRunStatus;
+  items: PMChecklistRunItem[];
+  startedBy: string;
+  startedByName: string;
+  startedAt?: Timestamp;
+  submittedBy?: string;
+  submittedByName?: string;
+  submittedAt?: Timestamp;
+  reviewedBy?: string;
+  reviewedByName?: string;
+  reviewedAt?: Timestamp;
+  adminNotes?: string;
   createdAt?: Timestamp;
   updatedAt?: Timestamp;
 };

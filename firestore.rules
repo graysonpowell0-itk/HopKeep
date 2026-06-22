@@ -26,8 +26,18 @@ service cloud.firestore {
       return active() && role() == "owner";
     }
 
+    function propertyAdmin(propertyId) {
+      return active()
+        && role() == "property_admin"
+        && propertyId in profile().data.assignedProperties;
+    }
+
     function propertyAssigned(propertyId) {
       return active() && propertyId in profile().data.assignedProperties;
+    }
+
+    function canManageProperty(propertyId) {
+      return manager() || propertyAdmin(propertyId);
     }
 
     function propertyVisible(propertyId) {
@@ -155,6 +165,35 @@ service cloud.firestore {
           active()
           && propertyAssigned(resource.data.propertyId)
           && resource.data.assignedTo == request.auth.uid
+        );
+      allow delete: if false;
+    }
+
+    match /pmChecklistTemplates/{templateId} {
+      allow read: if propertyVisible(resource.data.propertyId);
+      allow create: if canManageProperty(request.resource.data.propertyId)
+        && request.resource.data.active == true
+        && request.resource.data.items is list
+        && request.resource.data.items.size() > 0;
+      allow update: if canManageProperty(resource.data.propertyId);
+      allow delete: if false;
+    }
+
+    match /pmChecklistRuns/{runId} {
+      allow read: if propertyVisible(resource.data.propertyId);
+      allow create: if active()
+        && propertyAssigned(request.resource.data.propertyId)
+        && request.resource.data.startedBy == request.auth.uid
+        && request.resource.data.status == "in_progress";
+      allow update: if canManageProperty(resource.data.propertyId)
+        || (
+          active()
+          && propertyAssigned(resource.data.propertyId)
+          && resource.data.startedBy == request.auth.uid
+          && resource.data.status in ["in_progress", "rejected"]
+          && request.resource.data.propertyId == resource.data.propertyId
+          && request.resource.data.startedBy == resource.data.startedBy
+          && request.resource.data.status in ["in_progress", "pending_approval"]
         );
       allow delete: if false;
     }
