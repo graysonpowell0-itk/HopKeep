@@ -1191,7 +1191,7 @@ function LoginScreen({
           </div>
           {!isFirebaseConfigured ? (
             <div className="mb-4 rounded-lg border border-[var(--warning)] bg-[var(--warning-soft)] p-3 text-sm font-bold text-[var(--warning)]">
-              Firebase is not configured. Add `.env.local` from `.env.example`.
+              Firebase is not configured. Add `.env.local` from `.env.example`, or open the deployed Firebase Hosting app.
             </div>
           ) : null}
           {error || authError ? (
