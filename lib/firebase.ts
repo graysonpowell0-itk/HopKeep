@@ -12,6 +12,15 @@ const firebaseConfig: FirebaseOptions = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 };
 
+const hopKeepFirebaseConfig: FirebaseOptions = {
+  apiKey: "AIzaSyBE2_l_9nsDJBYCxV4SoOazx4MQlwrTM0E",
+  authDomain: "hopkeep-f71ca.firebaseapp.com",
+  projectId: "hopkeep-f71ca",
+  storageBucket: "hopkeep-f71ca.firebasestorage.app",
+  messagingSenderId: "28654125289",
+  appId: "1:28654125289:web:42e433920c1f6ab4073078",
+};
+
 let app: FirebaseApp | null = null;
 let auth: Auth | null = null;
 let db: Firestore | null = null;
@@ -33,7 +42,9 @@ function hasInitializedFirebaseConfig(activeApp: FirebaseApp | null) {
 }
 
 try {
-  app = getApps().length ? getApps()[0] : hasEnvFirebaseConfig(firebaseConfig) ? initializeApp(firebaseConfig) : initializeApp();
+  app = getApps().length
+    ? getApps()[0]
+    : initializeApp(hasEnvFirebaseConfig(firebaseConfig) ? firebaseConfig : hopKeepFirebaseConfig);
 } catch {
   app = null;
 }
