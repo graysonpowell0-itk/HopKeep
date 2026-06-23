@@ -469,6 +469,13 @@ function roomRangeLabel(property: Property) {
   return `${firstRoom}-${firstRoom + totalRooms - 1}`;
 }
 
+function roomNumbersForProperty(property: Property | undefined) {
+  if (!property) return [];
+  const totalRooms = Number(property.totalRooms || 0);
+  const firstRoom = roomStartNumber(property);
+  return Array.from({ length: totalRooms }, (_, index) => String(firstRoom + index));
+}
+
 function normalizePropertySelection(propertyIds: string[], properties: Property[]) {
   const validIds = new Set(properties.map((property) => property.id));
   return Array.from(new Set(propertyIds)).filter((propertyId) => validIds.has(propertyId));
@@ -2655,14 +2662,35 @@ function PmChecklistsPanel({
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [pdfFile, setPdfFile] = useState<File | null>(null);
+  const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const canManageTemplates = profile.role === "property_manager" || profile.role === "owner";
+  const selectedProperty = properties.find((property) => property.id === propertyId) ?? properties[0];
+  const propertyTemplates = useMemo(
+    () => templates.filter((template) => template.propertyId === propertyId),
+    [templates, propertyId],
+  );
+  const selectedTemplate = useMemo(
+    () => propertyTemplates.find((template) => template.id === selectedTemplateId) ?? propertyTemplates[0],
+    [propertyTemplates, selectedTemplateId],
+  );
+  const roomNumbers = useMemo(() => roomNumbersForProperty(selectedProperty), [selectedProperty]);
 
   useEffect(() => {
     const preferred = preferredPropertyId(profile, properties);
     if (preferred && !properties.some((property) => property.id === propertyId)) setPropertyId(preferred);
   }, [profile, properties, propertyId]);
+
+  useEffect(() => {
+    if (!propertyTemplates.length) {
+      setSelectedTemplateId("");
+      return;
+    }
+    if (!propertyTemplates.some((template) => template.id === selectedTemplateId)) {
+      setSelectedTemplateId(propertyTemplates[0].id);
+    }
+  }, [propertyTemplates, selectedTemplateId]);
 
   async function uploadTemplate(event: FormEvent) {
     event.preventDefault();
@@ -2765,6 +2793,70 @@ function PmChecklistsPanel({
       ) : null}
 
       <section className="space-y-4">
+        <div className="card p-4">
+          <SectionTitle title="Room PM Status" icon={<ClipboardCheck size={20} />} />
+          <div className="grid gap-4 md:grid-cols-2">
+            <Field label="Property">
+              <select className="field" value={propertyId} onChange={(event) => setPropertyId(event.target.value)} required>
+                {properties.map((property) => (
+                  <option key={property.id} value={property.id}>
+                    {property.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="PM checklist template">
+              <select
+                className="field"
+                value={selectedTemplate?.id ?? ""}
+                onChange={(event) => setSelectedTemplateId(event.target.value)}
+                disabled={!propertyTemplates.length}
+              >
+                {propertyTemplates.length ? (
+                  propertyTemplates.map((template) => (
+                    <option key={template.id} value={template.id}>
+                      {template.title}
+                    </option>
+                  ))
+                ) : (
+                  <option value="">No PM checklist uploaded</option>
+                )}
+              </select>
+            </Field>
+          </div>
+
+          {selectedProperty ? (
+            <p className="mt-3 text-sm font-bold text-[var(--muted)]">
+              {propertyName(properties, selectedProperty.id)} rooms: {roomRangeLabel(selectedProperty)} ({roomNumbers.length} total)
+            </p>
+          ) : null}
+
+          {selectedTemplate && roomNumbers.length ? (
+            <div className="mt-4 grid grid-cols-3 gap-2 sm:grid-cols-5 md:grid-cols-6 xl:grid-cols-8">
+              {roomNumbers.map((roomNumber) => (
+                <button
+                  key={roomNumber}
+                  type="button"
+                  className="min-h-11 rounded-lg border border-[var(--line)] bg-[var(--panel)] px-3 py-2 text-sm font-black text-[var(--text)] transition hover:border-[var(--brand)] hover:bg-[var(--brand-soft)]"
+                >
+                  {roomNumber}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="mt-4 rounded-lg border border-[var(--line)] bg-[var(--soft)] p-5 text-center">
+              <p className="font-black text-[var(--text)]">
+                {propertyTemplates.length ? "No rooms configured" : "No room PM checklist ready"}
+              </p>
+              <p className="mt-1 text-sm font-medium text-[var(--muted)]">
+                {propertyTemplates.length
+                  ? "Set the property's total rooms and first room number to generate room buttons."
+                  : "Upload a PM checklist PDF to generate room buttons for this property."}
+              </p>
+            </div>
+          )}
+        </div>
+
         <div className="card p-4">
           <SectionTitle title="PM Checklist Templates" icon={<FileText size={20} />} />
           <p className="text-sm font-medium leading-6 text-[var(--muted)]">
