@@ -2664,6 +2664,8 @@ function PmChecklistsPanel({
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [busy, setBusy] = useState(false);
+  const [roomSettingsBusy, setRoomSettingsBusy] = useState(false);
+  const [roomSettings, setRoomSettings] = useState({ totalRooms: 0, roomStartNumber: 1 });
   const [message, setMessage] = useState<string | null>(null);
   const canManageTemplates = profile.role === "property_manager" || profile.role === "owner";
   const selectedProperty = properties.find((property) => property.id === propertyId) ?? properties[0];
@@ -2675,7 +2677,19 @@ function PmChecklistsPanel({
     () => propertyTemplates.find((template) => template.id === selectedTemplateId) ?? propertyTemplates[0],
     [propertyTemplates, selectedTemplateId],
   );
-  const roomNumbers = useMemo(() => roomNumbersForProperty(selectedProperty), [selectedProperty]);
+  const roomSettingsProperty = useMemo(
+    () =>
+      selectedProperty
+        ? {
+            ...selectedProperty,
+            totalRooms: roomSettings.totalRooms,
+            roomStartNumber: roomSettings.roomStartNumber,
+          }
+        : undefined,
+    [selectedProperty, roomSettings.roomStartNumber, roomSettings.totalRooms],
+  );
+  const roomNumbers = useMemo(() => roomNumbersForProperty(roomSettingsProperty), [roomSettingsProperty]);
+  const roomRange = roomSettingsProperty ? roomRangeLabel(roomSettingsProperty) : "-";
 
   useEffect(() => {
     const preferred = preferredPropertyId(profile, properties);
@@ -2691,6 +2705,43 @@ function PmChecklistsPanel({
       setSelectedTemplateId(propertyTemplates[0].id);
     }
   }, [propertyTemplates, selectedTemplateId]);
+
+  useEffect(() => {
+    if (!selectedProperty) return;
+    setRoomSettings({
+      totalRooms: Number(selectedProperty.totalRooms || 0),
+      roomStartNumber: roomStartNumber(selectedProperty),
+    });
+  }, [selectedProperty]);
+
+  async function saveRoomSettings() {
+    if (!db || !selectedProperty) return;
+    const activeDb = db;
+    const totalRooms = Math.max(0, Number(roomSettings.totalRooms || 0));
+    const savedRoomStartNumber = Math.max(1, Number(roomSettings.roomStartNumber || 1));
+
+    setRoomSettingsBusy(true);
+    setMessage(null);
+    try {
+      await setDoc(
+        doc(activeDb, "properties", selectedProperty.id),
+        {
+          totalRooms,
+          roomStartNumber: savedRoomStartNumber,
+          firstRoomNumber: savedRoomStartNumber,
+          startingRoomNumber: savedRoomStartNumber,
+          roomNumberStart: savedRoomStartNumber,
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true },
+      );
+      setMessage(`Room settings saved for ${selectedProperty.name}.`);
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Unable to save room settings.");
+    } finally {
+      setRoomSettingsBusy(false);
+    }
+  }
 
   async function uploadTemplate(event: FormEvent) {
     event.preventDefault();
@@ -2827,8 +2878,44 @@ function PmChecklistsPanel({
 
           {selectedProperty ? (
             <p className="mt-3 text-sm font-bold text-[var(--muted)]">
-              {propertyName(properties, selectedProperty.id)} rooms: {roomRangeLabel(selectedProperty)} ({roomNumbers.length} total)
+              {propertyName(properties, selectedProperty.id)} rooms: {roomRange} ({roomNumbers.length} total)
             </p>
+          ) : null}
+
+          {canManageTemplates && selectedProperty ? (
+            <div className="mt-4 grid gap-4 md:grid-cols-[1fr_1fr_auto] md:items-end">
+              <Field label="Total rooms">
+                <input
+                  className="field"
+                  type="number"
+                  min={0}
+                  value={roomSettings.totalRooms}
+                  onChange={(event) =>
+                    setRoomSettings((current) => ({
+                      ...current,
+                      totalRooms: Math.max(0, Number(event.target.value || 0)),
+                    }))
+                  }
+                />
+              </Field>
+              <Field label="First room number">
+                <input
+                  className="field"
+                  type="number"
+                  min={1}
+                  value={roomSettings.roomStartNumber}
+                  onChange={(event) =>
+                    setRoomSettings((current) => ({
+                      ...current,
+                      roomStartNumber: Math.max(1, Number(event.target.value || 1)),
+                    }))
+                  }
+                />
+              </Field>
+              <SecondaryButton onClick={saveRoomSettings} disabled={roomSettingsBusy || !db} icon={<Check size={17} />}>
+                {roomSettingsBusy ? "Saving..." : "Save room settings"}
+              </SecondaryButton>
+            </div>
           ) : null}
 
           {selectedTemplate && roomNumbers.length ? (
