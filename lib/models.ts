@@ -42,6 +42,10 @@ export type Property = {
   name: string;
   address: string;
   totalRooms: number;
+  roomStartNumber?: number;
+  firstRoomNumber?: number;
+  startingRoomNumber?: number;
+  roomNumberStart?: number;
   active: boolean;
   createdAt?: Timestamp;
   updatedAt?: Timestamp;
@@ -126,12 +130,31 @@ export type ScheduledMaintenance = {
   updatedAt?: Timestamp;
 };
 
+export type PmChecklistTemplate = {
+  id: string;
+  propertyId: string;
+  title: string;
+  description: string;
+  fileName: string;
+  fileUrl: string;
+  storagePath: string;
+  uploadedBy: string;
+  uploadedByName: string;
+  active: boolean;
+  createdAt?: Timestamp;
+  updatedAt?: Timestamp;
+};
+
 export const seedProperties: Property[] = [
   {
     id: "hampton_inn",
     name: "Hampton Inn",
     address: "Saint Simons Island, GA",
     totalRooms: 79,
+    roomStartNumber: 109,
+    firstRoomNumber: 109,
+    startingRoomNumber: 109,
+    roomNumberStart: 109,
     active: true,
   },
   {
@@ -139,6 +162,10 @@ export const seedProperties: Property[] = [
     name: "Holiday Inn Express",
     address: "Brunswick, GA",
     totalRooms: 60,
+    roomStartNumber: 1,
+    firstRoomNumber: 1,
+    startingRoomNumber: 1,
+    roomNumberStart: 1,
     active: true,
   },
   {
@@ -146,6 +173,10 @@ export const seedProperties: Property[] = [
     name: "Queens Court Inn",
     address: "Brunswick, GA",
     totalRooms: 23,
+    roomStartNumber: 1,
+    firstRoomNumber: 1,
+    startingRoomNumber: 1,
+    roomNumberStart: 1,
     active: true,
   },
 ];

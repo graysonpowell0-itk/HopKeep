@@ -52,6 +52,7 @@ import {
   type AppUser,
   type ApprovalStatus,
   type OutOfOrderIssue,
+  type PmChecklistTemplate,
   type Property,
   type RepairLog,
   type ScheduledMaintenance,
@@ -64,6 +65,7 @@ type TabKey =
   | "new-log"
   | "my-logs"
   | "maintenance"
+  | "pm-checklists"
   | "out-of-order"
   | "approvals"
   | "daily-log"
@@ -291,6 +293,23 @@ const previewMaintenance: ScheduledMaintenance[] = [
   },
 ];
 
+const previewPmChecklistTemplates: PmChecklistTemplate[] = [
+  {
+    id: "preview-pm-template-1",
+    propertyId: "hampton_inn",
+    title: "Guest Room PM Checklist",
+    description: "Standard guest-room preventive maintenance inspection template.",
+    fileName: "guest-room-pm-checklist.pdf",
+    fileUrl: "#",
+    storagePath: "pmChecklists/hampton_inn/templates/preview-guest-room-pm-checklist.pdf",
+    uploadedBy: "preview-admin",
+    uploadedByName: "Morgan Ellis",
+    active: true,
+    createdAt: previewTimestamp("2026-05-22T10:00"),
+    updatedAt: previewTimestamp("2026-05-22T10:00"),
+  },
+];
+
 function useAdminPreviewMode() {
   const [enabled, setEnabled] = useState(false);
 
@@ -437,6 +456,17 @@ function propertyScopedQuery(collectionName: string, profile: AppUser, orderFiel
 
 function propertyName(properties: Property[], propertyId: string) {
   return properties.find((property) => property.id === propertyId)?.name ?? propertyId;
+}
+
+function roomStartNumber(property: Property) {
+  return Number(property.roomStartNumber ?? property.firstRoomNumber ?? property.startingRoomNumber ?? property.roomNumberStart ?? 1);
+}
+
+function roomRangeLabel(property: Property) {
+  const totalRooms = Number(property.totalRooms || 0);
+  if (!totalRooms) return "-";
+  const firstRoom = roomStartNumber(property);
+  return `${firstRoom}-${firstRoom + totalRooms - 1}`;
 }
 
 function normalizePropertySelection(propertyIds: string[], properties: Property[]) {
@@ -619,6 +649,15 @@ export function MaintenanceCommandCenter() {
     [scheduleQuery],
   );
 
+  const pmChecklistQuery = useMemo(
+    () => (adminPreview || !profile ? null : propertyScopedQuery("pmChecklistTemplates", profile)),
+    [adminPreview, profile],
+  );
+  const { items: livePmChecklistTemplates, error: livePmChecklistError } = useLiveCollection<PmChecklistTemplate>(
+    () => pmChecklistQuery,
+    [pmChecklistQuery],
+  );
+
   const usersQuery = useMemo(() => {
     if (adminPreview) return null;
     if (!db || !profile || !["property_manager", "owner"].includes(profile.role)) return null;
@@ -630,11 +669,13 @@ export function MaintenanceCommandCenter() {
   const repairLogs = adminPreview ? previewRepairLogs : liveRepairLogs;
   const issues = adminPreview ? previewIssues : liveIssues;
   const scheduledMaintenance = adminPreview ? previewMaintenance : liveScheduledMaintenance;
+  const pmChecklistTemplates = adminPreview ? previewPmChecklistTemplates : livePmChecklistTemplates;
   const users = adminPreview ? previewUsers : liveUsers;
   const propertyError = adminPreview ? null : livePropertyError;
   const repairError = adminPreview ? null : liveRepairError;
   const issueError = adminPreview ? null : liveIssueError;
   const scheduleError = adminPreview ? null : liveScheduleError;
+  const pmChecklistError = adminPreview ? null : livePmChecklistError;
 
   useEffect(() => {
     if (!adminPreview) return;
@@ -686,6 +727,13 @@ export function MaintenanceCommandCenter() {
         })
         .sort((a, b) => a.dueDate.localeCompare(b.dueDate)),
     [scheduledMaintenance, selectedProperty, profile],
+  );
+  const visiblePmChecklistTemplates = useMemo(
+    () =>
+      pmChecklistTemplates
+        .filter((template) => template.active !== false && matchesProperty(selectedProperty, template.propertyId))
+        .sort((a, b) => timestampValue(b.createdAt) - timestampValue(a.createdAt)),
+    [pmChecklistTemplates, selectedProperty],
   );
 
   if (!adminPreview && auth.loading) {
@@ -827,7 +875,7 @@ export function MaintenanceCommandCenter() {
           </header>
 
           <div className="mx-auto max-w-7xl px-4 py-6 lg:px-8">
-            <ErrorStrip errors={[propertyError, repairError, issueError, scheduleError, liveUserError]} />
+            <ErrorStrip errors={[propertyError, repairError, issueError, scheduleError, pmChecklistError, liveUserError]} />
             {activeTab === "dashboard" ? (
               <Dashboard
                 profile={profile}
@@ -843,6 +891,9 @@ export function MaintenanceCommandCenter() {
             {activeTab === "my-logs" ? <MyLogs logs={visibleRepairLogs} properties={activeProperties} /> : null}
             {activeTab === "maintenance" ? (
               <TechnicianMaintenance profile={profile} tasks={visibleMaintenance} properties={activeProperties} />
+            ) : null}
+            {activeTab === "pm-checklists" ? (
+              <PmChecklistsPanel profile={profile} properties={activeProperties} templates={visiblePmChecklistTemplates} />
             ) : null}
             {activeTab === "out-of-order" ? (
               <OutOfOrderPanel profile={profile} properties={activeProperties} issues={visibleIssues} />
@@ -1255,6 +1306,7 @@ function getNavItems(role: UserRole) {
       { key: "new-log" as TabKey, label: "New Repair Log", shortLabel: "New", icon: <Plus size={19} /> },
       { key: "my-logs" as TabKey, label: "My Logs", shortLabel: "Logs", icon: <FileText size={19} /> },
       { key: "maintenance" as TabKey, label: "Assigned Maintenance", shortLabel: "Tasks", icon: <CalendarDays size={19} /> },
+      { key: "pm-checklists" as TabKey, label: "PM Checklists", shortLabel: "PM", icon: <ClipboardCheck size={19} /> },
     ];
   }
   const admin = [
@@ -1263,6 +1315,7 @@ function getNavItems(role: UserRole) {
     { key: "approvals" as TabKey, label: "Approval Queue", shortLabel: "Approve", icon: <ClipboardCheck size={19} /> },
     { key: "daily-log" as TabKey, label: "Daily Log", shortLabel: "Daily", icon: <FileText size={19} /> },
     { key: "calendar" as TabKey, label: "Calendar", shortLabel: "Cal", icon: <CalendarDays size={19} /> },
+    { key: "pm-checklists" as TabKey, label: "PM Checklists", shortLabel: "PM", icon: <ClipboardCheck size={19} /> },
   ];
   if (role === "property_manager" || role === "owner") {
     return [
@@ -1437,7 +1490,7 @@ function Dashboard({
       </div>
 
       {profile.role === "technician" ? (
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid gap-4 md:grid-cols-3">
           <QuickAction
             title="New repair log"
             text="Capture before photos, repair notes, parts, time, and outcome."
@@ -1450,9 +1503,15 @@ function Dashboard({
             icon={<CalendarDays size={22} />}
             onClick={() => setActiveTab("maintenance")}
           />
+          <QuickAction
+            title="PM checklists"
+            text="Open preventive maintenance PDF templates for assigned hotels."
+            icon={<ClipboardCheck size={22} />}
+            onClick={() => setActiveTab("pm-checklists")}
+          />
         </div>
       ) : (
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <QuickAction
             title="Review approvals"
             text="Approve account requests and pending repair logs."
@@ -1470,6 +1529,12 @@ function Dashboard({
             text="Approved repair logs by property and date."
             icon={<FileText size={22} />}
             onClick={() => setActiveTab("daily-log")}
+          />
+          <QuickAction
+            title="PM checklists"
+            text="Upload and share preventive maintenance PDF templates."
+            icon={<ClipboardCheck size={22} />}
+            onClick={() => setActiveTab("pm-checklists")}
           />
         </div>
       )}
@@ -1493,8 +1558,9 @@ function Dashboard({
                   </div>
                   <Badge tone={property.active ? "approved" : "closed"}>{property.active ? "Active" : "Inactive"}</Badge>
                 </div>
-                <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+                <div className="mt-4 grid grid-cols-2 gap-2 text-center sm:grid-cols-4">
                   <MiniMetric label="Rooms" value={property.totalRooms || "-"} />
+                  <MiniMetric label="Range" value={roomRangeLabel(property)} />
                   <MiniMetric label="Pending" value={propertyLogs.filter((log) => log.approvalStatus === "pending").length} />
                   <MiniMetric label="OOO" value={propertyIssues.length} />
                 </div>
@@ -2576,6 +2642,192 @@ function MaintenanceCard({
   );
 }
 
+function PmChecklistsPanel({
+  profile,
+  properties,
+  templates,
+}: {
+  profile: AppUser;
+  properties: Property[];
+  templates: PmChecklistTemplate[];
+}) {
+  const [propertyId, setPropertyId] = useState(preferredPropertyId(profile, properties));
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [pdfFile, setPdfFile] = useState<File | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const canManageTemplates = profile.role === "property_manager" || profile.role === "owner";
+
+  useEffect(() => {
+    const preferred = preferredPropertyId(profile, properties);
+    if (preferred && !properties.some((property) => property.id === propertyId)) setPropertyId(preferred);
+  }, [profile, properties, propertyId]);
+
+  async function uploadTemplate(event: FormEvent) {
+    event.preventDefault();
+    if (!db || !storage || !propertyId) return;
+    if (!pdfFile) {
+      setMessage("Choose a PM checklist PDF before uploading.");
+      return;
+    }
+    if (pdfFile.type !== "application/pdf" && !pdfFile.name.toLowerCase().endsWith(".pdf")) {
+      setMessage("PM checklist templates must be PDF files.");
+      return;
+    }
+
+    const activeDb = db;
+    const activeStorage = storage;
+    const cleanName = pdfFile.name.replace(/[^\w.-]+/g, "_");
+    const storagePath = `pmChecklists/${propertyId}/templates/${Date.now()}-${cleanName}`;
+    const pdfRef = ref(activeStorage, storagePath);
+
+    setBusy(true);
+    setMessage(null);
+    try {
+      await uploadBytes(pdfRef, pdfFile, { contentType: "application/pdf" });
+      const fileUrl = await getDownloadURL(pdfRef);
+      await addDoc(collection(activeDb, "pmChecklistTemplates"), {
+        propertyId,
+        title: title.trim() || cleanName.replace(/\.pdf$/i, ""),
+        description: description.trim(),
+        fileName: cleanName,
+        fileUrl,
+        storagePath,
+        uploadedBy: profile.id,
+        uploadedByName: profile.name,
+        active: true,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      setTitle("");
+      setDescription("");
+      setPdfFile(null);
+      setMessage("PM checklist PDF uploaded.");
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Unable to upload PM checklist PDF.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const grouped = templates.reduce<Record<string, PmChecklistTemplate[]>>((acc, template) => {
+    acc[template.propertyId] = acc[template.propertyId] ?? [];
+    acc[template.propertyId].push(template);
+    return acc;
+  }, {});
+
+  return (
+    <div className={canManageTemplates ? "grid gap-5 xl:grid-cols-[420px_1fr]" : "space-y-4"}>
+      {canManageTemplates ? (
+        <form onSubmit={uploadTemplate} className="card h-fit p-4">
+          <SectionTitle title="Upload PM Checklist" icon={<ClipboardCheck size={20} />} />
+          {message ? (
+            <div className="mb-4 rounded-lg border border-[var(--line)] bg-[var(--soft)] p-3 text-sm font-bold text-[var(--text-soft)]">
+              {message}
+            </div>
+          ) : null}
+          <div className="grid gap-4">
+            <Field label="Property">
+              <select className="field" value={propertyId} onChange={(event) => setPropertyId(event.target.value)} required>
+                {properties.map((property) => (
+                  <option key={property.id} value={property.id}>
+                    {property.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Checklist title">
+              <input
+                className="field"
+                value={title}
+                onChange={(event) => setTitle(event.target.value)}
+                placeholder="Guest Room PM, Pool Room PM"
+              />
+            </Field>
+            <Field label="Description">
+              <textarea
+                className="field min-h-24"
+                value={description}
+                onChange={(event) => setDescription(event.target.value)}
+                placeholder="Optional notes for technicians"
+              />
+            </Field>
+            <Field label="PM checklist PDF">
+              <input className="field" type="file" accept="application/pdf,.pdf" onChange={(event) => setPdfFile(event.target.files?.[0] ?? null)} />
+            </Field>
+            {pdfFile ? <p className="text-xs font-bold text-[var(--muted)]">{pdfFile.name}</p> : null}
+            <PrimaryButton type="submit" disabled={busy || !db || !storage || !propertyId} icon={<Plus size={17} />}>
+              {busy ? "Uploading..." : "Upload PDF"}
+            </PrimaryButton>
+          </div>
+        </form>
+      ) : null}
+
+      <section className="space-y-4">
+        <div className="card p-4">
+          <SectionTitle title="PM Checklist Templates" icon={<FileText size={20} />} />
+          <p className="text-sm font-medium leading-6 text-[var(--muted)]">
+            Preventive maintenance PDFs are stored by property so technicians can open the right checklist before starting work.
+          </p>
+        </div>
+
+        {Object.keys(grouped).length ? (
+          Object.entries(grouped)
+            .sort(([a], [b]) => propertyName(properties, a).localeCompare(propertyName(properties, b)))
+            .map(([templatePropertyId, propertyTemplates]) => (
+              <div key={templatePropertyId}>
+                <h3 className="mb-2 text-sm font-black uppercase tracking-wide text-[var(--muted)]">
+                  {propertyName(properties, templatePropertyId)}
+                </h3>
+                <div className="grid gap-3">
+                  {propertyTemplates.map((template) => (
+                    <article key={template.id} className="card p-4">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h3 className="font-black text-[var(--text)]">{template.title}</h3>
+                            <Badge tone="scheduled">PDF</Badge>
+                          </div>
+                          <p className="mt-1 text-sm font-bold text-[var(--muted)]">
+                            {template.fileName} - uploaded by {template.uploadedByName || "Admin"}
+                          </p>
+                        </div>
+                        <p className="text-xs font-bold text-[var(--muted)]">{formatShortDate(template.createdAt)}</p>
+                      </div>
+                      {template.description ? <TextBlock label="Notes" text={template.description} /> : null}
+                      <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:justify-end">
+                        <a
+                          href={template.fileUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-[var(--line)] bg-[var(--panel)] px-4 py-2.5 text-sm font-extrabold text-[var(--text)] transition hover:bg-[var(--soft)] sm:w-auto"
+                        >
+                          <FileText size={17} />
+                          Open PDF
+                        </a>
+                        <a
+                          href={template.fileUrl}
+                          download={template.fileName}
+                          className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-[var(--line)] bg-[var(--panel)] px-4 py-2.5 text-sm font-extrabold text-[var(--text)] transition hover:bg-[var(--soft)] sm:w-auto"
+                        >
+                          <Download size={17} />
+                          Download
+                        </a>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              </div>
+            ))
+        ) : (
+          <EmptyState title="No PM checklists" text="Uploaded preventive maintenance PDFs will appear here by property." />
+        )}
+      </section>
+    </div>
+  );
+}
+
 function PropertiesPanel({ properties, addPropertyRequest }: { properties: Property[]; addPropertyRequest: number }) {
   const visibleProperties = properties.filter((property) => property.active !== false);
   const [editing, setEditing] = useState<Record<string, Partial<Property>>>({});
@@ -2585,6 +2837,7 @@ function PropertiesPanel({ properties, addPropertyRequest }: { properties: Prope
     name: "",
     address: "",
     totalRooms: 0,
+    roomStartNumber: 1,
   });
 
   useEffect(() => {
@@ -2640,6 +2893,7 @@ function PropertiesPanel({ properties, addPropertyRequest }: { properties: Prope
   async function saveProperty(property: Property) {
     if (!db) return;
     const activeDb = db;
+    const savedRoomStartNumber = Number(editing[property.id]?.roomStartNumber ?? roomStartNumber(property));
     setBusyId(property.id);
     try {
       await setDoc(
@@ -2648,6 +2902,10 @@ function PropertiesPanel({ properties, addPropertyRequest }: { properties: Prope
           ...property,
           ...editing[property.id],
           totalRooms: Number(editing[property.id]?.totalRooms ?? property.totalRooms ?? 0),
+          roomStartNumber: savedRoomStartNumber,
+          firstRoomNumber: savedRoomStartNumber,
+          startingRoomNumber: savedRoomStartNumber,
+          roomNumberStart: savedRoomStartNumber,
           updatedAt: serverTimestamp(),
         },
         { merge: true },
@@ -2662,6 +2920,7 @@ function PropertiesPanel({ properties, addPropertyRequest }: { properties: Prope
     if (!db) return;
     const activeDb = db;
     const propertyId = propertyIdFromName(newProperty.name);
+    const savedRoomStartNumber = Number(newProperty.roomStartNumber || 1);
     setBusyId("add");
     try {
       await setDoc(
@@ -2671,13 +2930,17 @@ function PropertiesPanel({ properties, addPropertyRequest }: { properties: Prope
           name: newProperty.name.trim(),
           address: newProperty.address.trim(),
           totalRooms: Number(newProperty.totalRooms || 0),
+          roomStartNumber: savedRoomStartNumber,
+          firstRoomNumber: savedRoomStartNumber,
+          startingRoomNumber: savedRoomStartNumber,
+          roomNumberStart: savedRoomStartNumber,
           active: true,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         },
         { merge: true },
       );
-      setNewProperty({ name: "", address: "", totalRooms: 0 });
+      setNewProperty({ name: "", address: "", totalRooms: 0, roomStartNumber: 1 });
       setIsAdding(false);
     } finally {
       setBusyId(null);
@@ -2704,7 +2967,7 @@ function PropertiesPanel({ properties, addPropertyRequest }: { properties: Prope
       {isAdding ? (
         <form onSubmit={addProperty} className="card p-4">
           <SectionTitle title="Add Property" icon={<Plus size={20} />} />
-          <div className="grid gap-4 md:grid-cols-3">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <Field label="Name">
               <input
                 className="field"
@@ -2730,6 +2993,15 @@ function PropertiesPanel({ properties, addPropertyRequest }: { properties: Prope
                 min="0"
                 value={newProperty.totalRooms}
                 onChange={(event) => setNewProperty((current) => ({ ...current, totalRooms: Number(event.target.value) }))}
+              />
+            </Field>
+            <Field label="First room number">
+              <input
+                className="field"
+                type="number"
+                min="0"
+                value={newProperty.roomStartNumber}
+                onChange={(event) => setNewProperty((current) => ({ ...current, roomStartNumber: Number(event.target.value) }))}
               />
             </Field>
           </div>
@@ -2766,6 +3038,7 @@ function PropertiesPanel({ properties, addPropertyRequest }: { properties: Prope
                 <input
                   className="field"
                   type="number"
+                  min="0"
                   value={editing[property.id]?.totalRooms ?? property.totalRooms}
                   onChange={(event) =>
                     setEditing((current) => ({
@@ -2776,6 +3049,30 @@ function PropertiesPanel({ properties, addPropertyRequest }: { properties: Prope
                 />
               </Field>
             </div>
+            <div className="mt-3">
+              <Field label="First room number">
+                <input
+                  className="field"
+                  type="number"
+                  min="0"
+                  value={editing[property.id]?.roomStartNumber ?? roomStartNumber(property)}
+                  onChange={(event) =>
+                    setEditing((current) => ({
+                      ...current,
+                      [property.id]: { ...current[property.id], roomStartNumber: Number(event.target.value) },
+                    }))
+                  }
+                />
+              </Field>
+            </div>
+            <p className="mt-2 text-xs font-bold text-[var(--muted)]">
+              Generated room range:{" "}
+              {roomRangeLabel({
+                ...property,
+                totalRooms: Number(editing[property.id]?.totalRooms ?? property.totalRooms ?? 0),
+                roomStartNumber: Number(editing[property.id]?.roomStartNumber ?? property.roomStartNumber ?? 1),
+              })}
+            </p>
             <div className="mt-4">
               <PrimaryButton onClick={() => saveProperty(property)} disabled={busyId === property.id} icon={<Check size={17} />}>
                 Save property

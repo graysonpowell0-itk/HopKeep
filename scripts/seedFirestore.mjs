@@ -8,6 +8,10 @@ const seedProperties = [
     name: "Hampton Inn",
     address: "Saint Simons Island, GA",
     totalRooms: 79,
+    roomStartNumber: 109,
+    firstRoomNumber: 109,
+    startingRoomNumber: 109,
+    roomNumberStart: 109,
     active: true,
   },
   {
@@ -15,6 +19,10 @@ const seedProperties = [
     name: "Holiday Inn Express",
     address: "Brunswick, GA",
     totalRooms: 60,
+    roomStartNumber: 1,
+    firstRoomNumber: 1,
+    startingRoomNumber: 1,
+    roomNumberStart: 1,
     active: true,
   },
   {
@@ -22,6 +30,10 @@ const seedProperties = [
     name: "Queens Court Inn",
     address: "Brunswick, GA",
     totalRooms: 23,
+    roomStartNumber: 1,
+    firstRoomNumber: 1,
+    startingRoomNumber: 1,
+    roomNumberStart: 1,
     active: true,
   },
 ];

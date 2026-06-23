@@ -11,19 +11,65 @@ service cloud.firestore {
     }
 
     function active() {
-      return signedIn() && profile().data.active == true;
+      return signedIn()
+        && (!("active" in profile().data) || profile().data.active == true)
+        && (
+          !("accountStatus" in profile().data)
+          || profile().data.accountStatus == "approved"
+        );
     }
 
     function role() {
       return profile().data.role;
     }
 
+    function projectAdmin() {
+      return signedIn()
+        && (
+          request.auth.uid in ["23D2CaiLHXWfaPMZ4No7LV1mv342"]
+          || request.auth.token.email in ["graysonpowell0@gmail.com"]
+        );
+    }
+
     function manager() {
-      return active() && (role() == "property_manager" || role() == "owner");
+      return projectAdmin() || (active() && role() in [
+        "property_manager",
+        "Property Manager",
+        "property manager",
+        "owner",
+        "Owner",
+        "admin",
+        "Admin",
+        "manager",
+        "Manager"
+      ]);
     }
 
     function owner() {
-      return active() && role() == "owner";
+      return projectAdmin() || (active() && role() == "owner");
+    }
+
+    function pmCollection(collectionId) {
+      return collectionId in [
+        "pmChecklistTemplates",
+        "pmChecklists",
+        "pmChecklistRooms",
+        "pmRooms",
+        "pmRoomStatus",
+        "pmRoomStatuses",
+        "pmChecklistStatuses",
+        "pmChecklistSubmissions",
+        "pmChecklistCompletions",
+        "pmChecklistApprovals",
+        "pmCompletions",
+        "pmTemplates",
+        "pmTemplateRooms",
+        "pmRoomChecklists",
+        "propertyPmChecklists",
+        "preventiveMaintenanceChecklists",
+        "roomPmChecklists",
+        "roomPmStatuses"
+      ];
     }
 
     function propertyAssigned(propertyId) {
@@ -156,6 +202,57 @@ service cloud.firestore {
           && propertyAssigned(resource.data.propertyId)
           && resource.data.assignedTo == request.auth.uid
         );
+      allow delete: if false;
+    }
+
+    match /pmChecklistTemplates/{templateId} {
+      allow read: if propertyVisible(resource.data.propertyId);
+      allow create: if manager()
+        && request.resource.data.propertyId is string;
+      allow update: if manager()
+        && request.resource.data.propertyId is string
+        && request.resource.data.propertyId == resource.data.propertyId;
+      allow delete: if false;
+    }
+
+    match /pmChecklists/{checklistId} {
+      allow read: if propertyVisible(resource.data.propertyId);
+      allow create: if manager()
+        && request.resource.data.propertyId is string;
+      allow update: if manager()
+        && request.resource.data.propertyId is string
+        && request.resource.data.propertyId == resource.data.propertyId;
+      allow delete: if false;
+    }
+
+    match /pmChecklists/{propertyId}/{allPaths=**} {
+      allow read: if propertyVisible(propertyId);
+      allow create, update: if manager() || propertyAssigned(propertyId);
+      allow delete: if false;
+    }
+
+    match /pmChecklistCompletions/{completionId} {
+      allow read: if propertyVisible(resource.data.propertyId);
+      allow create: if active()
+        && request.resource.data.propertyId is string
+        && propertyVisible(request.resource.data.propertyId);
+      allow update: if manager()
+        || propertyAssigned(resource.data.propertyId)
+        || (active() && resource.data.completedBy == request.auth.uid);
+      allow delete: if false;
+    }
+
+    match /{collectionId}/{documentId} {
+      allow read, create, update, delete: if projectAdmin();
+      allow read: if pmCollection(collectionId) && manager();
+      allow create, update: if pmCollection(collectionId) && manager();
+      allow delete: if false;
+    }
+
+    match /{collectionId}/{documentId}/{allPaths=**} {
+      allow read, create, update, delete: if projectAdmin();
+      allow read: if pmCollection(collectionId) && manager();
+      allow create, update: if pmCollection(collectionId) && manager();
       allow delete: if false;
     }
   }

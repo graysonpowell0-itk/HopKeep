@@ -11,11 +11,34 @@ service firebase.storage {
     }
 
     function active() {
-      return signedIn() && profile().data.active == true;
+      return signedIn()
+        && (!("active" in profile().data) || profile().data.active == true)
+        && (
+          !("accountStatus" in profile().data)
+          || profile().data.accountStatus == "approved"
+        );
+    }
+
+    function projectAdmin() {
+      return signedIn()
+        && (
+          request.auth.uid in ["23D2CaiLHXWfaPMZ4No7LV1mv342"]
+          || request.auth.token.email in ["graysonpowell0@gmail.com"]
+        );
     }
 
     function manager() {
-      return active() && (profile().data.role == "property_manager" || profile().data.role == "owner");
+      return projectAdmin() || (active() && profile().data.role in [
+        "property_manager",
+        "Property Manager",
+        "property manager",
+        "owner",
+        "Owner",
+        "admin",
+        "Admin",
+        "manager",
+        "Manager"
+      ]);
     }
 
     function propertyAssigned(propertyId) {
@@ -30,6 +53,12 @@ service firebase.storage {
       return request.resource != null
         && request.resource.size < 10 * 1024 * 1024
         && request.resource.contentType.matches("image/.*");
+    }
+
+    function validPdf() {
+      return request.resource != null
+        && request.resource.size < 25 * 1024 * 1024
+        && request.resource.contentType == "application/pdf";
     }
 
     match /repairLogs/{propertyId}/{userId}/{allPaths=**} {
@@ -54,6 +83,18 @@ service firebase.storage {
     match /scheduledMaintenance/{propertyId}/{allPaths=**} {
       allow read: if propertyVisible(propertyId);
       allow write: if propertyVisible(propertyId) && validImage();
+    }
+
+    match /pmChecklists/{propertyId}/templates/{allPaths=**} {
+      allow read: if propertyVisible(propertyId);
+      allow write: if manager() && validPdf();
+    }
+
+    match /{allPaths=**} {
+      allow read, delete: if projectAdmin();
+      allow write: if projectAdmin()
+        && request.resource != null
+        && request.resource.size < 25 * 1024 * 1024;
     }
   }
 }
