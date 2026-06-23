@@ -19,7 +19,7 @@ service cloud.firestore {
     }
 
     function manager() {
-      return active() && (role() == "property_manager" || role() == "owner");
+      return active() && role() in ["property_manager", "owner", "admin", "manager"];
     }
 
     function owner() {

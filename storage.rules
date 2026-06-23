@@ -15,7 +15,7 @@ service firebase.storage {
     }
 
     function manager() {
-      return active() && (profile().data.role == "property_manager" || profile().data.role == "owner");
+      return active() && profile().data.role in ["property_manager", "owner", "admin", "manager"];
     }
 
     function propertyAdmin(propertyId) {
