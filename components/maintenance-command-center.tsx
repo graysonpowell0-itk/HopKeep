@@ -2884,7 +2884,7 @@ function PmChecklistsPanel({
 
           {canManageTemplates && selectedProperty ? (
             <div className="mt-4 grid gap-4 md:grid-cols-[1fr_1fr_auto] md:items-end">
-              <Field label="Total rooms">
+              <Field label="Room count">
                 <input
                   className="field"
                   type="number"
@@ -3131,7 +3131,7 @@ function PropertiesPanel({ properties, addPropertyRequest }: { properties: Prope
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-lg font-black text-[var(--text)]">Properties</h2>
-          <p className="text-sm font-medium text-[var(--muted)]">Manage hotel records and room counts.</p>
+          <p className="text-sm font-medium text-[var(--muted)]">Manage hotel records, room counts, and starting room numbers.</p>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row">
           <SecondaryButton onClick={seedDefaults} disabled={busyId === "seed"} icon={<Check size={17} />}>
@@ -3165,7 +3165,7 @@ function PropertiesPanel({ properties, addPropertyRequest }: { properties: Prope
                 required
               />
             </Field>
-            <Field label="Total rooms">
+            <Field label="Room count">
               <input
                 className="field"
                 type="number"
@@ -3212,46 +3212,47 @@ function PropertiesPanel({ properties, addPropertyRequest }: { properties: Prope
                 />
               </Field>
             </div>
-            <div className="mt-3">
-              <Field label="Total rooms">
-                <input
-                  className="field"
-                  type="number"
-                  min="0"
-                  value={editing[property.id]?.totalRooms ?? property.totalRooms}
-                  onChange={(event) =>
-                    setEditing((current) => ({
-                      ...current,
-                      [property.id]: { ...current[property.id], totalRooms: Number(event.target.value) },
-                    }))
-                  }
-                />
-              </Field>
+            <div className="mt-3 rounded-lg border border-[var(--line)] bg-[var(--soft)] p-3">
+              <p className="text-xs font-black uppercase tracking-wide text-[var(--brand)]">Room numbering</p>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
+                <Field label="Room count">
+                  <input
+                    className="field"
+                    type="number"
+                    min="0"
+                    value={editing[property.id]?.totalRooms ?? property.totalRooms}
+                    onChange={(event) =>
+                      setEditing((current) => ({
+                        ...current,
+                        [property.id]: { ...current[property.id], totalRooms: Number(event.target.value) },
+                      }))
+                    }
+                  />
+                </Field>
+                <Field label="First room number">
+                  <input
+                    className="field"
+                    type="number"
+                    min="0"
+                    value={editing[property.id]?.roomStartNumber ?? roomStartNumber(property)}
+                    onChange={(event) =>
+                      setEditing((current) => ({
+                        ...current,
+                        [property.id]: { ...current[property.id], roomStartNumber: Number(event.target.value) },
+                      }))
+                    }
+                  />
+                </Field>
+              </div>
+              <p className="mt-2 text-xs font-bold text-[var(--muted)]">
+                Generated room range:{" "}
+                {roomRangeLabel({
+                  ...property,
+                  totalRooms: Number(editing[property.id]?.totalRooms ?? property.totalRooms ?? 0),
+                  roomStartNumber: Number(editing[property.id]?.roomStartNumber ?? property.roomStartNumber ?? 1),
+                })}
+              </p>
             </div>
-            <div className="mt-3">
-              <Field label="First room number">
-                <input
-                  className="field"
-                  type="number"
-                  min="0"
-                  value={editing[property.id]?.roomStartNumber ?? roomStartNumber(property)}
-                  onChange={(event) =>
-                    setEditing((current) => ({
-                      ...current,
-                      [property.id]: { ...current[property.id], roomStartNumber: Number(event.target.value) },
-                    }))
-                  }
-                />
-              </Field>
-            </div>
-            <p className="mt-2 text-xs font-bold text-[var(--muted)]">
-              Generated room range:{" "}
-              {roomRangeLabel({
-                ...property,
-                totalRooms: Number(editing[property.id]?.totalRooms ?? property.totalRooms ?? 0),
-                roomStartNumber: Number(editing[property.id]?.roomStartNumber ?? property.roomStartNumber ?? 1),
-              })}
-            </p>
             <div className="mt-4">
               <PrimaryButton onClick={() => saveProperty(property)} disabled={busyId === property.id} icon={<Check size={17} />}>
                 Save property
