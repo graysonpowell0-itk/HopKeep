@@ -11,7 +11,9 @@ service firebase.storage {
     }
 
     function active() {
-      return signedIn() && profile().data.active == true;
+      return signedIn()
+        && profile().data.active != false
+        && !(profile().data.accountStatus in ["pending_admin", "pending_owner", "rejected"]);
     }
 
     function manager() {
