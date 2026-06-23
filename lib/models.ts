@@ -43,6 +43,7 @@ export type Property = {
   name: string;
   address: string;
   totalRooms: number;
+  roomStartNumber?: number;
   active: boolean;
   createdAt?: Timestamp;
   updatedAt?: Timestamp;
@@ -179,6 +180,7 @@ export const seedProperties: Property[] = [
     name: "Hampton Inn",
     address: "Saint Simons Island, GA",
     totalRooms: 79,
+    roomStartNumber: 109,
     active: true,
   },
   {
@@ -186,6 +188,7 @@ export const seedProperties: Property[] = [
     name: "Holiday Inn Express",
     address: "Brunswick, GA",
     totalRooms: 60,
+    roomStartNumber: 101,
     active: true,
   },
   {
@@ -193,6 +196,7 @@ export const seedProperties: Property[] = [
     name: "Queens Court Inn",
     address: "Brunswick, GA",
     totalRooms: 23,
+    roomStartNumber: 101,
     active: true,
   },
 ];

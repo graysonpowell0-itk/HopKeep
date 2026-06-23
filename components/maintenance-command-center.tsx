@@ -112,6 +112,9 @@ const pmRunLabels: Record<PMChecklistRunStatus, string> = {
   rejected: "Needs revision",
 };
 
+const DEFAULT_ROOM_START_NUMBER = 101;
+const ROOMS_PER_FLOOR = 20;
+
 function previewTimestamp(isoDate: string) {
   const millis = Date.parse(isoDate);
   return {
@@ -334,7 +337,7 @@ const previewPMRuns: PMChecklistRun[] = [
     propertyId: "hampton_inn",
     templateId: "preview-pm-template-1",
     templateTitle: "Guest Room PM Checklist",
-    roomNumber: "101",
+    roomNumber: "109",
     status: "in_progress",
     items: previewPMTemplates[0].items.map((item, index) => ({
       ...item,
@@ -351,7 +354,7 @@ const previewPMRuns: PMChecklistRun[] = [
     propertyId: "hampton_inn",
     templateId: "preview-pm-template-1",
     templateTitle: "Guest Room PM Checklist",
-    roomNumber: "102",
+    roomNumber: "110",
     status: "pending_approval",
     items: previewPMTemplates[0].items.map((item) => ({
       ...item,
@@ -371,7 +374,7 @@ const previewPMRuns: PMChecklistRun[] = [
     propertyId: "hampton_inn",
     templateId: "preview-pm-template-1",
     templateTitle: "Guest Room PM Checklist",
-    roomNumber: "103",
+    roomNumber: "111",
     status: "approved",
     items: previewPMTemplates[0].items.map((item) => ({
       ...item,
@@ -2432,11 +2435,26 @@ async function extractPMChecklistItemsFromPdf(file: File): Promise<PMChecklistIt
   return buildPMChecklistItems(lines);
 }
 
-function generatedRoomNumbers(totalRooms: number) {
+function normalizeRoomStartNumber(value: unknown) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue) || numericValue <= 0) return DEFAULT_ROOM_START_NUMBER;
+  return Math.floor(numericValue);
+}
+
+function generatedRoomNumbers(totalRooms: number, roomStartNumber = DEFAULT_ROOM_START_NUMBER) {
   const count = Math.max(0, Number(totalRooms || 0));
+  const start = normalizeRoomStartNumber(roomStartNumber);
+  const startFloor = Math.floor(start / 100);
+  const startRoom = start % 100;
+
+  if (startFloor < 1 || startRoom < 1 || startRoom > ROOMS_PER_FLOOR) {
+    return Array.from({ length: count }, (_, index) => String(start + index));
+  }
+
   return Array.from({ length: count }, (_, index) => {
-    const floor = Math.floor(index / 20) + 1;
-    const room = (index % 20) + 1;
+    const roomIndex = startRoom - 1 + index;
+    const floor = startFloor + Math.floor(roomIndex / ROOMS_PER_FLOOR);
+    const room = (roomIndex % ROOMS_PER_FLOOR) + 1;
     return `${floor}${String(room).padStart(2, "0")}`;
   });
 }
@@ -2473,7 +2491,7 @@ function PMChecklistPanel({
     propertyTemplates.find((template) => template.id === selectedTemplateId) ?? propertyTemplates[0] ?? null;
   const propertyRuns = runs.filter((run) => run.propertyId === property?.id);
   const selectedRun = selectedRunId ? runs.find((run) => run.id === selectedRunId) ?? null : null;
-  const rooms = generatedRoomNumbers(property?.totalRooms ?? 0);
+  const rooms = generatedRoomNumbers(property?.totalRooms ?? 0, property?.roomStartNumber);
   const pendingRuns = runs.filter((run) => run.status === "pending_approval");
 
   useEffect(() => {
@@ -3295,6 +3313,7 @@ function PropertiesPanel({ properties, addPropertyRequest }: { properties: Prope
     name: "",
     address: "",
     totalRooms: 0,
+    roomStartNumber: DEFAULT_ROOM_START_NUMBER,
   });
 
   useEffect(() => {
@@ -3358,6 +3377,7 @@ function PropertiesPanel({ properties, addPropertyRequest }: { properties: Prope
           ...property,
           ...editing[property.id],
           totalRooms: Number(editing[property.id]?.totalRooms ?? property.totalRooms ?? 0),
+          roomStartNumber: normalizeRoomStartNumber(editing[property.id]?.roomStartNumber ?? property.roomStartNumber),
           updatedAt: serverTimestamp(),
         },
         { merge: true },
@@ -3381,13 +3401,14 @@ function PropertiesPanel({ properties, addPropertyRequest }: { properties: Prope
           name: newProperty.name.trim(),
           address: newProperty.address.trim(),
           totalRooms: Number(newProperty.totalRooms || 0),
+          roomStartNumber: normalizeRoomStartNumber(newProperty.roomStartNumber),
           active: true,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         },
         { merge: true },
       );
-      setNewProperty({ name: "", address: "", totalRooms: 0 });
+      setNewProperty({ name: "", address: "", totalRooms: 0, roomStartNumber: DEFAULT_ROOM_START_NUMBER });
       setIsAdding(false);
     } finally {
       setBusyId(null);
@@ -3399,7 +3420,7 @@ function PropertiesPanel({ properties, addPropertyRequest }: { properties: Prope
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-lg font-black text-[var(--text)]">Properties</h2>
-          <p className="text-sm font-medium text-[var(--muted)]">Manage hotel records and room counts.</p>
+          <p className="text-sm font-medium text-[var(--muted)]">Manage hotel records, room counts, and PM room numbering.</p>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row">
           <SecondaryButton onClick={seedDefaults} disabled={busyId === "seed"} icon={<Check size={17} />}>
@@ -3414,7 +3435,7 @@ function PropertiesPanel({ properties, addPropertyRequest }: { properties: Prope
       {isAdding ? (
         <form onSubmit={addProperty} className="card p-4">
           <SectionTitle title="Add Property" icon={<Plus size={20} />} />
-          <div className="grid gap-4 md:grid-cols-3">
+          <div className="grid gap-4 md:grid-cols-4">
             <Field label="Name">
               <input
                 className="field"
@@ -3440,6 +3461,15 @@ function PropertiesPanel({ properties, addPropertyRequest }: { properties: Prope
                 min="0"
                 value={newProperty.totalRooms}
                 onChange={(event) => setNewProperty((current) => ({ ...current, totalRooms: Number(event.target.value) }))}
+              />
+            </Field>
+            <Field label="First room number">
+              <input
+                className="field"
+                type="number"
+                min="1"
+                value={newProperty.roomStartNumber}
+                onChange={(event) => setNewProperty((current) => ({ ...current, roomStartNumber: Number(event.target.value) }))}
               />
             </Field>
           </div>
@@ -3485,6 +3515,25 @@ function PropertiesPanel({ properties, addPropertyRequest }: { properties: Prope
                   }
                 />
               </Field>
+            </div>
+            <div className="mt-3">
+              <Field label="First room number">
+                <input
+                  className="field"
+                  type="number"
+                  min="1"
+                  value={editing[property.id]?.roomStartNumber ?? property.roomStartNumber ?? DEFAULT_ROOM_START_NUMBER}
+                  onChange={(event) =>
+                    setEditing((current) => ({
+                      ...current,
+                      [property.id]: { ...current[property.id], roomStartNumber: Number(event.target.value) },
+                    }))
+                  }
+                />
+              </Field>
+              <p className="mt-2 text-xs font-bold text-[var(--muted)]">
+                PM rooms start {generatedRoomNumbers(3, editing[property.id]?.roomStartNumber ?? property.roomStartNumber).join(", ")}...
+              </p>
             </div>
             <div className="mt-4">
               <PrimaryButton onClick={() => saveProperty(property)} disabled={busyId === property.id} icon={<Check size={17} />}>
