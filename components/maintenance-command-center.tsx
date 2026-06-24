@@ -735,14 +735,6 @@ export function MaintenanceCommandCenter() {
         .sort((a, b) => a.dueDate.localeCompare(b.dueDate)),
     [scheduledMaintenance, selectedProperty, profile],
   );
-  const visiblePmChecklistTemplates = useMemo(
-    () =>
-      pmChecklistTemplates
-        .filter((template) => template.active !== false && matchesProperty(selectedProperty, template.propertyId))
-        .sort((a, b) => timestampValue(b.createdAt) - timestampValue(a.createdAt)),
-    [pmChecklistTemplates, selectedProperty],
-  );
-
   if (!adminPreview && auth.loading) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-[var(--background)] px-6" data-theme={theme}>
@@ -909,7 +901,11 @@ export function MaintenanceCommandCenter() {
               <TechnicianMaintenance profile={profile} tasks={visibleMaintenance} properties={activeProperties} />
             ) : null}
             {activeTab === "pm-checklists" ? (
-              <PmChecklistsPanel profile={profile} properties={activeProperties} templates={visiblePmChecklistTemplates} />
+              <PmChecklistsPanel
+                profile={profile}
+                properties={activeProperties}
+                templates={pmChecklistTemplates.filter((template) => template.active !== false)}
+              />
             ) : null}
             {activeTab === "out-of-order" ? (
               <OutOfOrderPanel profile={profile} properties={activeProperties} issues={visibleIssues} />
@@ -2674,6 +2670,7 @@ function PmChecklistsPanel({
   const [description, setDescription] = useState("");
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
+  const [selectedRoomNumber, setSelectedRoomNumber] = useState("");
   const [busy, setBusy] = useState(false);
   const [roomSettingsBusy, setRoomSettingsBusy] = useState(false);
   const [roomSettings, setRoomSettings] = useState({ totalRooms: 0, roomStartNumber: 1 });
@@ -2681,7 +2678,10 @@ function PmChecklistsPanel({
   const canManageTemplates = profile.role === "property_manager" || profile.role === "owner";
   const selectedProperty = properties.find((property) => property.id === propertyId) ?? properties[0];
   const propertyTemplates = useMemo(
-    () => templates.filter((template) => template.propertyId === propertyId),
+    () =>
+      templates
+        .filter((template) => template.active !== false && template.propertyId === propertyId)
+        .sort((a, b) => timestampValue(b.createdAt) - timestampValue(a.createdAt)),
     [templates, propertyId],
   );
   const selectedTemplate = useMemo(
@@ -2724,6 +2724,26 @@ function PmChecklistsPanel({
       roomStartNumber: roomStartNumber(selectedProperty),
     });
   }, [selectedProperty]);
+
+  useEffect(() => {
+    setSelectedRoomNumber("");
+  }, [propertyId, selectedTemplateId]);
+
+  function openRoomChecklist(roomNumber: string) {
+    setSelectedRoomNumber(roomNumber);
+    if (!selectedTemplate?.fileUrl || selectedTemplate.fileUrl === "#") {
+      setMessage("This checklist PDF link is not available yet.");
+      return;
+    }
+
+    const opened = window.open(selectedTemplate.fileUrl, "_blank");
+    if (!opened) {
+      setMessage(`Pop-up blocked. Use the selected room link to open the checklist for room ${roomNumber}.`);
+      return;
+    }
+    opened.opener = null;
+    setMessage(`Opening ${selectedTemplate.title} for room ${roomNumber}.`);
+  }
 
   async function saveRoomSettings() {
     if (!db || !selectedProperty) return;
@@ -2777,7 +2797,7 @@ function PmChecklistsPanel({
     try {
       await uploadBytes(pdfRef, pdfFile, { contentType: "application/pdf" });
       const fileUrl = await getDownloadURL(pdfRef);
-      await addDoc(collection(activeDb, "pmChecklistTemplates"), {
+      const uploadedTemplateRef = await addDoc(collection(activeDb, "pmChecklistTemplates"), {
         propertyId,
         title: title.trim() || cleanName.replace(/\.pdf$/i, ""),
         description: description.trim(),
@@ -2790,10 +2810,11 @@ function PmChecklistsPanel({
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
+      setSelectedTemplateId(uploadedTemplateRef.id);
       setTitle("");
       setDescription("");
       setPdfFile(null);
-      setMessage("PM checklist PDF uploaded.");
+      setMessage("PM checklist PDF uploaded and selected for the room list.");
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "Unable to upload PM checklist PDF.");
     } finally {
@@ -2930,17 +2951,38 @@ function PmChecklistsPanel({
           ) : null}
 
           {selectedTemplate && roomNumbers.length ? (
-            <div className="mt-4 grid grid-cols-3 gap-2 sm:grid-cols-5 md:grid-cols-6 xl:grid-cols-8">
-              {roomNumbers.map((roomNumber) => (
-                <button
-                  key={roomNumber}
-                  type="button"
-                  className="min-h-11 rounded-lg border border-[var(--line)] bg-[var(--panel)] px-3 py-2 text-sm font-black text-[var(--text)] transition hover:border-[var(--brand)] hover:bg-[var(--brand-soft)]"
-                >
-                  {roomNumber}
-                </button>
-              ))}
-            </div>
+            <>
+              {selectedRoomNumber ? (
+                <div className="mt-4 rounded-lg border border-[var(--line)] bg-[var(--soft)] p-3 text-sm font-bold text-[var(--text-soft)]">
+                  Room {selectedRoomNumber} selected.{" "}
+                  <a
+                    href={selectedTemplate.fileUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-[var(--brand)] underline decoration-2 underline-offset-4"
+                  >
+                    Open checklist PDF
+                  </a>
+                </div>
+              ) : null}
+              <div className="mt-4 grid grid-cols-3 gap-2 sm:grid-cols-5 md:grid-cols-6 xl:grid-cols-8">
+                {roomNumbers.map((roomNumber) => (
+                  <button
+                    key={roomNumber}
+                    type="button"
+                    onClick={() => openRoomChecklist(roomNumber)}
+                    aria-label={`Open ${selectedTemplate.title} for room ${roomNumber}`}
+                    className={`min-h-11 rounded-lg border px-3 py-2 text-sm font-black transition ${
+                      selectedRoomNumber === roomNumber
+                        ? "border-[var(--brand)] bg-[var(--brand-soft)] text-[var(--brand)]"
+                        : "border-[var(--line)] bg-[var(--panel)] text-[var(--text)] hover:border-[var(--brand)] hover:bg-[var(--brand-soft)]"
+                    }`}
+                  >
+                    {roomNumber}
+                  </button>
+                ))}
+              </div>
+            </>
           ) : (
             <div className="mt-4 rounded-lg border border-[var(--line)] bg-[var(--soft)] p-5 text-center">
               <p className="font-black text-[var(--text)]">
