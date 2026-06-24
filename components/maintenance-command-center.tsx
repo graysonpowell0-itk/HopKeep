@@ -771,6 +771,15 @@ export function MaintenanceCommandCenter() {
   if (!profile) return null;
 
   const navItems = getNavItems(profile.role);
+  const mobileNavPriority: TabKey[] =
+    profile.role === "technician"
+      ? ["dashboard", "new-log", "my-logs", "maintenance", "pm-checklists"]
+      : profile.role === "property_manager" || profile.role === "owner"
+        ? ["dashboard", "approvals", "out-of-order", "pm-checklists", "properties"]
+        : ["dashboard", "approvals", "out-of-order", "daily-log", "pm-checklists"];
+  const mobileNavItems = mobileNavPriority
+    .map((key) => navItems.find((item) => item.key === key))
+    .filter((item): item is ReturnType<typeof getNavItems>[number] => Boolean(item));
   const handleLogout = adminPreview
     ? () => {
         window.location.href = "/";
@@ -803,11 +812,11 @@ export function MaintenanceCommandCenter() {
         </aside>
 
         <section className="min-w-0 flex-1">
-          <header className="sticky top-0 z-20 border-b border-[var(--line)] bg-[var(--background-translucent)] px-4 py-4 backdrop-blur lg:px-8">
+          <header className="mobile-app-header sticky top-0 z-20 border-b border-[var(--line)] bg-[var(--background-translucent)] px-4 py-4 backdrop-blur lg:px-8">
             <div className="mx-auto flex max-w-7xl items-center justify-between gap-3">
               <div className="min-w-0">
-                <p className="text-xs font-black uppercase tracking-[0.18em] text-[var(--brand)]">HopKeep Command Center</p>
-                <h1 className="truncate text-3xl font-black text-[var(--text)] sm:text-4xl">
+                <p className="mobile-page-kicker text-xs font-black uppercase tracking-[0.18em] text-[var(--brand)]">HopKeep Command Center</p>
+                <h1 className="mobile-page-title truncate text-3xl font-black text-[var(--text)] sm:text-4xl">
                   {navItems.find((item) => item.key === activeTab)?.label ?? "Dashboard"}
                 </h1>
               </div>
@@ -881,7 +890,7 @@ export function MaintenanceCommandCenter() {
             ) : null}
           </header>
 
-          <div className="mx-auto max-w-7xl px-4 py-6 lg:px-8">
+          <div className="mobile-content mx-auto max-w-7xl px-4 py-6 lg:px-8">
             <ErrorStrip errors={[propertyError, repairError, issueError, scheduleError, pmChecklistError, liveUserError]} />
             {activeTab === "dashboard" ? (
               <Dashboard
@@ -919,19 +928,19 @@ export function MaintenanceCommandCenter() {
         </section>
       </div>
 
-      <nav className="fixed bottom-0 left-0 right-0 z-30 border-t border-[var(--line)] bg-[var(--panel)] safe-bottom lg:hidden">
-        <div className="flex overflow-x-auto px-2 pt-2">
-          {navItems.map((item) => (
+      <nav className="mobile-bottom-nav fixed bottom-0 left-0 right-0 z-30 border-t border-[var(--line)] bg-[var(--panel)] safe-bottom lg:hidden" aria-label="Mobile navigation">
+        <div className="mobile-bottom-nav-grid">
+          {mobileNavItems.map((item) => (
             <button
               key={item.key}
               type="button"
               onClick={() => setActiveTab(item.key)}
-              className={`flex min-w-20 flex-1 flex-col items-center gap-1 rounded-lg px-3 py-2 text-[0.7rem] font-black ${
+              className={`mobile-nav-button flex min-w-0 flex-col items-center justify-center gap-1 rounded-lg text-[0.68rem] font-black ${
                 activeTab === item.key ? "bg-[var(--brand-soft)] text-[var(--brand)]" : "text-[var(--muted)]"
               }`}
             >
               {item.icon}
-              <span className="whitespace-nowrap">{item.shortLabel}</span>
+              <span className="mobile-nav-label whitespace-nowrap">{item.shortLabel}</span>
             </button>
           ))}
         </div>
@@ -1031,30 +1040,32 @@ function LoginScreen({
   }
 
   return (
-    <main className="min-h-screen bg-[var(--background)] px-4 py-6 text-[var(--text)]" data-theme={theme}>
-      <section className="mx-auto grid min-h-[calc(100vh-3rem)] max-w-6xl items-center gap-8 lg:grid-cols-[1fr_440px]">
+    <main className="min-h-screen bg-[var(--background)] px-3 py-4 text-[var(--text)] sm:px-4 sm:py-6" data-theme={theme}>
+      <section className="mx-auto grid min-h-[calc(100vh-2rem)] max-w-6xl items-center gap-5 sm:gap-8 lg:grid-cols-[1fr_440px]">
         <div className="max-w-2xl">
-          <div className="mb-6 flex justify-end">
+          <div className="mb-4 flex justify-end sm:mb-6">
             <ThemeToggle theme={theme} toggleTheme={toggleTheme} />
           </div>
           <div className="flex flex-col items-center text-center lg:items-start lg:text-left">
             <SignInLogo />
-            <p className="mt-6 text-sm font-black uppercase tracking-[0.18em] text-[var(--brand)]">Hotel maintenance</p>
-            <h1 className="mt-3 text-4xl font-black leading-tight text-[var(--text)] sm:text-5xl">
+            <p className="mt-4 text-xs font-black uppercase tracking-[0.16em] text-[var(--brand)] sm:mt-6 sm:text-sm">
+              Hotel maintenance
+            </p>
+            <h1 className="mt-3 text-3xl font-black leading-tight text-[var(--text)] sm:text-5xl">
               Maintenance command, ready for every shift.
             </h1>
-            <p className="mt-4 max-w-xl text-base font-medium leading-7 text-[var(--muted)]">
+            <p className="mt-3 max-w-xl text-sm font-medium leading-6 text-[var(--muted)] sm:mt-4 sm:text-base sm:leading-7">
               Sign in to capture repair photos, submit reports, review hotel status, and keep maintenance records moving.
             </p>
           </div>
-          <div className="mt-8 grid gap-3 sm:grid-cols-3">
+          <div className="mt-5 grid grid-cols-3 gap-2 sm:mt-8 sm:gap-3">
             <MiniMetric label="Photo logs" value="Upload" />
             <MiniMetric label="Approvals" value="Track" />
             <MiniMetric label="Records" value="Live" />
           </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="card p-5 shadow-[var(--shadow-strong)]">
+        <form onSubmit={handleSubmit} className="card mobile-card-padding p-5 shadow-[var(--shadow-strong)]">
           <div className="mb-5">
             <div className="mb-4 grid grid-cols-2 rounded-lg border border-[var(--line)] bg-[var(--soft)] p-1">
               <button
@@ -1213,7 +1224,7 @@ function SignInLogo() {
       <img
         src="/brand/hopkeep-login-logo.png"
         alt="HopKeep maintenance made simple"
-        className="h-auto w-full max-w-[16.2rem] rounded-lg object-contain shadow-[var(--shadow)] sm:max-w-[18.9rem]"
+        className="h-auto w-full max-w-[13.5rem] rounded-lg object-contain shadow-[var(--shadow)] sm:max-w-[18.9rem]"
       />
     </div>
   );
@@ -1319,7 +1330,7 @@ function getNavItems(role: UserRole) {
   const admin = [
     ...base,
     { key: "out-of-order" as TabKey, label: "Out-of-Order", shortLabel: "OOO", icon: <DoorOpen size={19} /> },
-    { key: "approvals" as TabKey, label: "Approval Queue", shortLabel: "Approve", icon: <ClipboardCheck size={19} /> },
+    { key: "approvals" as TabKey, label: "Approval Queue", shortLabel: "Queue", icon: <ClipboardCheck size={19} /> },
     { key: "daily-log" as TabKey, label: "Daily Log", shortLabel: "Daily", icon: <FileText size={19} /> },
     { key: "calendar" as TabKey, label: "Calendar", shortLabel: "Cal", icon: <CalendarDays size={19} /> },
     { key: "pm-checklists" as TabKey, label: "PM Checklists", shortLabel: "PM", icon: <ClipboardCheck size={19} /> },
@@ -1583,15 +1594,15 @@ function Dashboard({
 function StatCard({ label, value, tone, icon }: { label: string; value: number; tone: string; icon: ReactNode }) {
   const iconClass = tone === "approved" ? "metric-icon-green" : tone === "scheduled" ? "metric-icon-blue" : tone === "pending" ? "metric-icon-blue" : tone === "rejected" || tone === "open" ? "metric-icon-red" : "metric-icon-yellow";
   return (
-    <article className="metric-tile grid min-h-32 grid-cols-[4.5rem_1fr_auto] items-center gap-4 rounded-lg p-4">
-      <span className={`flex h-14 w-14 items-center justify-center rounded-full ${iconClass}`}>{icon}</span>
-      <div>
-        <p className="text-base font-black text-[var(--text)]">{label}</p>
-        <p className="mt-2 text-sm font-medium text-[var(--muted)]">
+    <article className="metric-tile grid min-h-24 grid-cols-[3rem_1fr_auto] items-center gap-3 rounded-lg p-3 sm:min-h-32 sm:grid-cols-[4.5rem_1fr_auto] sm:gap-4 sm:p-4">
+      <span className={`flex h-11 w-11 items-center justify-center rounded-full sm:h-14 sm:w-14 ${iconClass}`}>{icon}</span>
+      <div className="min-w-0">
+        <p className="text-sm font-black text-[var(--text)] sm:text-base">{label}</p>
+        <p className="mt-1 text-xs font-medium leading-5 text-[var(--muted)] sm:mt-2 sm:text-sm">
           {tone === "approved" ? "Logs approved" : tone === "scheduled" ? "Upcoming tasks" : tone === "open" ? "Rooms / locations" : tone === "rejected" ? "Require attention" : "Needs your review"}
         </p>
       </div>
-      <p className={`text-4xl font-black ${tone === "approved" ? "text-[var(--brand)]" : tone === "scheduled" ? "text-[var(--blue)]" : tone === "rejected" || tone === "open" ? "text-[var(--danger)]" : "text-[var(--text)]"}`}>{value}</p>
+      <p className={`text-3xl font-black sm:text-4xl ${tone === "approved" ? "text-[var(--brand)]" : tone === "scheduled" ? "text-[var(--blue)]" : tone === "rejected" || tone === "open" ? "text-[var(--danger)]" : "text-[var(--text)]"}`}>{value}</p>
     </article>
   );
 }
@@ -1620,12 +1631,12 @@ function QuickAction({
     <button
       type="button"
       onClick={onClick}
-      className="card grid min-h-28 grid-cols-[4.5rem_1fr_auto] items-center gap-4 p-4 text-left transition hover:border-[var(--brand)] hover:bg-[var(--panel-hover)]"
+      className="card grid min-h-24 grid-cols-[3rem_1fr_2rem] items-center gap-3 p-3 text-left transition hover:border-[var(--brand)] hover:bg-[var(--panel-hover)] sm:min-h-28 sm:grid-cols-[4.5rem_1fr_auto] sm:gap-4 sm:p-4"
     >
-      <div className="flex h-14 w-14 items-center justify-center rounded-lg bg-[var(--brand-soft)] text-[var(--brand)]">{icon}</div>
-      <div>
+      <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-[var(--brand-soft)] text-[var(--brand)] sm:h-14 sm:w-14">{icon}</div>
+      <div className="min-w-0">
         <h3 className="font-black text-[var(--text)]">{title}</h3>
-        <p className="mt-1 text-sm font-medium leading-6 text-[var(--muted)]">{text}</p>
+        <p className="mt-1 text-xs font-medium leading-5 text-[var(--muted)] sm:text-sm sm:leading-6">{text}</p>
       </div>
       <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--brand)] text-white">
         <ChevronRight size={18} />
