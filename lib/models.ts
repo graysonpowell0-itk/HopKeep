@@ -145,6 +145,29 @@ export type PmChecklistTemplate = {
   updatedAt?: Timestamp;
 };
 
+export type PmRoomChecklistStatus = "not_started" | "in_progress" | "completed";
+
+export type PmRoomChecklist = {
+  id: string;
+  propertyId: string;
+  templateId: string;
+  templateTitle: string;
+  roomNumber: string;
+  fileName: string;
+  fileUrl: string;
+  storagePath: string;
+  status: PmRoomChecklistStatus;
+  checkedItems: string[];
+  notes?: string;
+  createdBy: string;
+  createdByName: string;
+  completedBy?: string;
+  completedByName?: string;
+  completedAt?: Timestamp;
+  createdAt?: Timestamp;
+  updatedAt?: Timestamp;
+};
+
 export const seedProperties: Property[] = [
   {
     id: "hampton_inn",

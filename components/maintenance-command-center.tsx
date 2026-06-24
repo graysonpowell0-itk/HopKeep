@@ -11,7 +11,9 @@ import {
   setDoc,
   updateDoc,
   where,
+  writeBatch,
   type DocumentData,
+  type Firestore,
   type Query,
   type Timestamp,
 } from "firebase/firestore";
@@ -52,6 +54,8 @@ import {
   type AppUser,
   type ApprovalStatus,
   type OutOfOrderIssue,
+  type PmRoomChecklist,
+  type PmRoomChecklistStatus,
   type PmChecklistTemplate,
   type Property,
   type RepairLog,
@@ -95,6 +99,12 @@ const approvalLabels: Record<ApprovalStatus, string> = {
   approved: "Approved",
   rejected: "Rejected",
   needs_info: "Needs info",
+};
+
+const pmRoomStatusLabels: Record<PmRoomChecklistStatus, string> = {
+  not_started: "Not started",
+  in_progress: "In progress",
+  completed: "Completed",
 };
 
 function previewTimestamp(isoDate: string) {
@@ -310,6 +320,24 @@ const previewPmChecklistTemplates: PmChecklistTemplate[] = [
   },
 ];
 
+const previewPmRoomChecklists: PmRoomChecklist[] = roomNumbersForProperty(seedProperties[0]).map((roomNumber) => ({
+  id: `preview-pm-template-1_${roomNumber}`,
+  propertyId: "hampton_inn",
+  templateId: "preview-pm-template-1",
+  templateTitle: "Guest Room PM Checklist",
+  roomNumber,
+  fileName: "guest-room-pm-checklist.pdf",
+  fileUrl: "#",
+  storagePath: "pmChecklists/hampton_inn/templates/preview-guest-room-pm-checklist.pdf",
+  status: "not_started",
+  checkedItems: [],
+  notes: "",
+  createdBy: "preview-admin",
+  createdByName: "Morgan Ellis",
+  createdAt: previewTimestamp("2026-05-22T10:01"),
+  updatedAt: previewTimestamp("2026-05-22T10:01"),
+}));
+
 function useAdminPreviewMode() {
   const [enabled, setEnabled] = useState(false);
 
@@ -474,6 +502,68 @@ function roomNumbersForProperty(property: Property | undefined) {
   const totalRooms = Number(property.totalRooms || 0);
   const firstRoom = roomStartNumber(property);
   return Array.from({ length: totalRooms }, (_, index) => String(firstRoom + index));
+}
+
+const pmChecklistItems = [
+  { id: "review_pdf", label: "Review the uploaded PM checklist PDF" },
+  { id: "inspect_room", label: "Complete the room preventive maintenance inspection" },
+  { id: "document_findings", label: "Document notes or follow-up needs" },
+];
+
+function roomChecklistId(templateId: string, roomNumber: string) {
+  return `${templateId}_${roomNumber.replace(/[^\w-]+/g, "_")}`;
+}
+
+async function createPmRoomChecklistRecords({
+  activeDb,
+  property,
+  template,
+  profile,
+  roomNumbers,
+}: {
+  activeDb: Firestore;
+  property: Property;
+  template: PmChecklistTemplate;
+  profile: AppUser;
+  roomNumbers?: string[];
+}) {
+  const rooms = roomNumbers ?? roomNumbersForProperty(property);
+  let batch = writeBatch(activeDb);
+  let queuedWrites = 0;
+  const commits: Promise<void>[] = [];
+
+  function queueSet(path: string, data: Record<string, unknown>) {
+    if (queuedWrites === 499) {
+      commits.push(batch.commit());
+      batch = writeBatch(activeDb);
+      queuedWrites = 0;
+    }
+    batch.set(doc(activeDb, "pmRoomChecklists", path), data, { merge: true });
+    queuedWrites += 1;
+  }
+
+  rooms.forEach((roomNumber) => {
+    queueSet(roomChecklistId(template.id, roomNumber), {
+      propertyId: property.id,
+      templateId: template.id,
+      templateTitle: template.title,
+      roomNumber,
+      fileName: template.fileName,
+      fileUrl: template.fileUrl,
+      storagePath: template.storagePath,
+      status: "not_started",
+      checkedItems: [],
+      notes: "",
+      createdBy: profile.id,
+      createdByName: profile.name,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+  });
+
+  if (queuedWrites) commits.push(batch.commit());
+  await Promise.all(commits);
+  return rooms.length;
 }
 
 function normalizePropertySelection(propertyIds: string[], properties: Property[]) {
@@ -665,6 +755,15 @@ export function MaintenanceCommandCenter() {
     [pmChecklistQuery],
   );
 
+  const pmRoomChecklistQuery = useMemo(
+    () => (adminPreview || !profile ? null : propertyScopedQuery("pmRoomChecklists", profile)),
+    [adminPreview, profile],
+  );
+  const { items: livePmRoomChecklists, error: livePmRoomChecklistError } = useLiveCollection<PmRoomChecklist>(
+    () => pmRoomChecklistQuery,
+    [pmRoomChecklistQuery],
+  );
+
   const usersQuery = useMemo(() => {
     if (adminPreview) return null;
     if (!db || !profile || !["property_manager", "owner"].includes(profile.role)) return null;
@@ -677,12 +776,13 @@ export function MaintenanceCommandCenter() {
   const issues = adminPreview ? previewIssues : liveIssues;
   const scheduledMaintenance = adminPreview ? previewMaintenance : liveScheduledMaintenance;
   const pmChecklistTemplates = adminPreview ? previewPmChecklistTemplates : livePmChecklistTemplates;
+  const pmRoomChecklists = adminPreview ? previewPmRoomChecklists : livePmRoomChecklists;
   const users = adminPreview ? previewUsers : liveUsers;
   const propertyError = adminPreview ? null : livePropertyError;
   const repairError = adminPreview ? null : liveRepairError;
   const issueError = adminPreview ? null : liveIssueError;
   const scheduleError = adminPreview ? null : liveScheduleError;
-  const pmChecklistError = adminPreview ? null : livePmChecklistError;
+  const pmChecklistError = adminPreview ? null : livePmChecklistError || livePmRoomChecklistError;
 
   useEffect(() => {
     if (!adminPreview) return;
@@ -905,6 +1005,7 @@ export function MaintenanceCommandCenter() {
                 profile={profile}
                 properties={activeProperties}
                 templates={pmChecklistTemplates.filter((template) => template.active !== false)}
+                roomChecklists={pmRoomChecklists}
               />
             ) : null}
             {activeTab === "out-of-order" ? (
@@ -917,7 +1018,14 @@ export function MaintenanceCommandCenter() {
             {activeTab === "calendar" ? (
               <CalendarPanel profile={profile} properties={activeProperties} tasks={visibleMaintenance} users={users} />
             ) : null}
-            {activeTab === "properties" ? <PropertiesPanel properties={properties} addPropertyRequest={addPropertyRequest} /> : null}
+            {activeTab === "properties" ? (
+              <PropertiesPanel
+                profile={profile}
+                properties={properties}
+                templates={pmChecklistTemplates.filter((template) => template.active !== false)}
+                addPropertyRequest={addPropertyRequest}
+              />
+            ) : null}
             {activeTab === "users" ? <UsersPanel profile={profile} users={users} properties={activeProperties} /> : null}
             {activeTab === "profile" ? <ProfileSettings profile={profile} properties={activeProperties} /> : null}
           </div>
@@ -2660,18 +2768,18 @@ function PmChecklistsPanel({
   profile,
   properties,
   templates,
+  roomChecklists,
 }: {
   profile: AppUser;
   properties: Property[];
   templates: PmChecklistTemplate[];
+  roomChecklists: PmRoomChecklist[];
 }) {
   const [propertyId, setPropertyId] = useState(preferredPropertyId(profile, properties));
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [selectedRoomNumber, setSelectedRoomNumber] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [roomNotesDraft, setRoomNotesDraft] = useState("");
+  const [digitalBusy, setDigitalBusy] = useState(false);
   const [roomSettingsBusy, setRoomSettingsBusy] = useState(false);
   const [roomSettings, setRoomSettings] = useState({ totalRooms: 0, roomStartNumber: 1 });
   const [message, setMessage] = useState<string | null>(null);
@@ -2701,6 +2809,18 @@ function PmChecklistsPanel({
   );
   const roomNumbers = useMemo(() => roomNumbersForProperty(roomSettingsProperty), [roomSettingsProperty]);
   const roomRange = roomSettingsProperty ? roomRangeLabel(roomSettingsProperty) : "-";
+  const roomChecklistMap = useMemo(() => {
+    const records = new Map<string, PmRoomChecklist>();
+    roomChecklists
+      .filter((checklist) => checklist.propertyId === propertyId && checklist.templateId === selectedTemplate?.id)
+      .forEach((checklist) => records.set(checklist.roomNumber, checklist));
+    return records;
+  }, [propertyId, roomChecklists, selectedTemplate?.id]);
+  const selectedRoomChecklist = selectedRoomNumber ? roomChecklistMap.get(selectedRoomNumber) : undefined;
+  const missingRoomNumbers = useMemo(
+    () => (selectedTemplate ? roomNumbers.filter((roomNumber) => !roomChecklistMap.has(roomNumber)) : []),
+    [roomChecklistMap, roomNumbers, selectedTemplate],
+  );
 
   useEffect(() => {
     const preferred = preferredPropertyId(profile, properties);
@@ -2729,20 +2849,13 @@ function PmChecklistsPanel({
     setSelectedRoomNumber("");
   }, [propertyId, selectedTemplateId]);
 
-  function openRoomChecklist(roomNumber: string) {
-    setSelectedRoomNumber(roomNumber);
-    if (!selectedTemplate?.fileUrl || selectedTemplate.fileUrl === "#") {
-      setMessage("This checklist PDF link is not available yet.");
-      return;
-    }
+  useEffect(() => {
+    setRoomNotesDraft(selectedRoomChecklist?.notes ?? "");
+  }, [selectedRoomChecklist?.id, selectedRoomChecklist?.notes]);
 
-    const opened = window.open(selectedTemplate.fileUrl, "_blank");
-    if (!opened) {
-      setMessage(`Pop-up blocked. Use the selected room link to open the checklist for room ${roomNumber}.`);
-      return;
-    }
-    opened.opener = null;
-    setMessage(`Opening ${selectedTemplate.title} for room ${roomNumber}.`);
+  function selectRoomChecklist(roomNumber: string) {
+    setSelectedRoomNumber(roomNumber);
+    setMessage(null);
   }
 
   async function saveRoomSettings() {
@@ -2774,51 +2887,93 @@ function PmChecklistsPanel({
     }
   }
 
-  async function uploadTemplate(event: FormEvent) {
-    event.preventDefault();
-    if (!db || !storage || !propertyId) return;
-    if (!pdfFile) {
-      setMessage("Choose a PM checklist PDF before uploading.");
-      return;
-    }
-    if (pdfFile.type !== "application/pdf" && !pdfFile.name.toLowerCase().endsWith(".pdf")) {
-      setMessage("PM checklist templates must be PDF files.");
-      return;
-    }
+  async function generateMissingDigitalChecklists() {
+    if (!db || !selectedProperty || !selectedTemplate || !missingRoomNumbers.length) return;
 
     const activeDb = db;
-    const activeStorage = storage;
-    const cleanName = pdfFile.name.replace(/[^\w.-]+/g, "_");
-    const storagePath = `pmChecklists/${propertyId}/templates/${Date.now()}-${cleanName}`;
-    const pdfRef = ref(activeStorage, storagePath);
-
-    setBusy(true);
+    setDigitalBusy(true);
     setMessage(null);
     try {
-      await uploadBytes(pdfRef, pdfFile, { contentType: "application/pdf" });
-      const fileUrl = await getDownloadURL(pdfRef);
-      const uploadedTemplateRef = await addDoc(collection(activeDb, "pmChecklistTemplates"), {
-        propertyId,
-        title: title.trim() || cleanName.replace(/\.pdf$/i, ""),
-        description: description.trim(),
-        fileName: cleanName,
-        fileUrl,
-        storagePath,
-        uploadedBy: profile.id,
-        uploadedByName: profile.name,
-        active: true,
-        createdAt: serverTimestamp(),
+      const createdCount = await createPmRoomChecklistRecords({
+        activeDb,
+        property: selectedProperty,
+        template: selectedTemplate,
+        profile,
+        roomNumbers: missingRoomNumbers,
+      });
+      setMessage(`Created ${createdCount} digital room checklist${createdCount === 1 ? "" : "s"} for ${selectedProperty.name}.`);
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Unable to create digital room checklists.");
+    } finally {
+      setDigitalBusy(false);
+    }
+  }
+
+  async function updateSelectedRoomStatus(status: PmRoomChecklistStatus) {
+    if (!db || !selectedRoomChecklist) return;
+    const activeDb = db;
+    setDigitalBusy(true);
+    setMessage(null);
+    try {
+      await updateDoc(doc(activeDb, "pmRoomChecklists", selectedRoomChecklist.id), {
+        status,
+        completedBy: status === "completed" ? profile.id : null,
+        completedByName: status === "completed" ? profile.name : null,
+        completedAt: status === "completed" ? serverTimestamp() : null,
         updatedAt: serverTimestamp(),
       });
-      setSelectedTemplateId(uploadedTemplateRef.id);
-      setTitle("");
-      setDescription("");
-      setPdfFile(null);
-      setMessage("PM checklist PDF uploaded and selected for the room list.");
+      setMessage(`Room ${selectedRoomChecklist.roomNumber} PM checklist updated.`);
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : "Unable to upload PM checklist PDF.");
+      setMessage(err instanceof Error ? err.message : "Unable to update room checklist.");
     } finally {
-      setBusy(false);
+      setDigitalBusy(false);
+    }
+  }
+
+  async function toggleSelectedRoomItem(itemId: string) {
+    if (!db || !selectedRoomChecklist) return;
+    const activeDb = db;
+    const checked = new Set(selectedRoomChecklist.checkedItems ?? []);
+    if (checked.has(itemId)) checked.delete(itemId);
+    else checked.add(itemId);
+    const checkedItems = Array.from(checked);
+    const status: PmRoomChecklistStatus =
+      checkedItems.length === 0 ? "not_started" : checkedItems.length === pmChecklistItems.length ? "completed" : "in_progress";
+
+    setDigitalBusy(true);
+    setMessage(null);
+    try {
+      await updateDoc(doc(activeDb, "pmRoomChecklists", selectedRoomChecklist.id), {
+        checkedItems,
+        status,
+        completedBy: status === "completed" ? profile.id : null,
+        completedByName: status === "completed" ? profile.name : null,
+        completedAt: status === "completed" ? serverTimestamp() : null,
+        updatedAt: serverTimestamp(),
+      });
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Unable to update checklist item.");
+    } finally {
+      setDigitalBusy(false);
+    }
+  }
+
+  async function saveSelectedRoomNotes() {
+    if (!db || !selectedRoomChecklist) return;
+    const activeDb = db;
+    setDigitalBusy(true);
+    setMessage(null);
+    try {
+      await updateDoc(doc(activeDb, "pmRoomChecklists", selectedRoomChecklist.id), {
+        notes: roomNotesDraft.trim(),
+        status: selectedRoomChecklist.status === "not_started" ? "in_progress" : selectedRoomChecklist.status,
+        updatedAt: serverTimestamp(),
+      });
+      setMessage(`Room ${selectedRoomChecklist.roomNumber} notes saved.`);
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Unable to save room notes.");
+    } finally {
+      setDigitalBusy(false);
     }
   }
 
@@ -2829,50 +2984,11 @@ function PmChecklistsPanel({
   }, {});
 
   return (
-    <div className={canManageTemplates ? "grid gap-5 xl:grid-cols-[420px_1fr]" : "space-y-4"}>
-      {canManageTemplates ? (
-        <form onSubmit={uploadTemplate} className="card h-fit p-4">
-          <SectionTitle title="Upload PM Checklist" icon={<ClipboardCheck size={20} />} />
-          {message ? (
-            <div className="mb-4 rounded-lg border border-[var(--line)] bg-[var(--soft)] p-3 text-sm font-bold text-[var(--text-soft)]">
-              {message}
-            </div>
-          ) : null}
-          <div className="grid gap-4">
-            <Field label="Property">
-              <select className="field" value={propertyId} onChange={(event) => setPropertyId(event.target.value)} required>
-                {properties.map((property) => (
-                  <option key={property.id} value={property.id}>
-                    {property.name}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field label="Checklist title">
-              <input
-                className="field"
-                value={title}
-                onChange={(event) => setTitle(event.target.value)}
-                placeholder="Guest Room PM, Pool Room PM"
-              />
-            </Field>
-            <Field label="Description">
-              <textarea
-                className="field min-h-24"
-                value={description}
-                onChange={(event) => setDescription(event.target.value)}
-                placeholder="Optional notes for technicians"
-              />
-            </Field>
-            <Field label="PM checklist PDF">
-              <input className="field" type="file" accept="application/pdf,.pdf" onChange={(event) => setPdfFile(event.target.files?.[0] ?? null)} />
-            </Field>
-            {pdfFile ? <p className="text-xs font-bold text-[var(--muted)]">{pdfFile.name}</p> : null}
-            <PrimaryButton type="submit" disabled={busy || !db || !storage || !propertyId} icon={<Plus size={17} />}>
-              {busy ? "Uploading..." : "Upload PDF"}
-            </PrimaryButton>
-          </div>
-        </form>
+    <div className="space-y-4">
+      {message ? (
+        <div className="rounded-lg border border-[var(--line)] bg-[var(--soft)] p-3 text-sm font-bold text-[var(--text-soft)]">
+          {message}
+        </div>
       ) : null}
 
       <section className="space-y-4">
@@ -2950,37 +3066,119 @@ function PmChecklistsPanel({
             </div>
           ) : null}
 
+          {canManageTemplates && selectedTemplate && missingRoomNumbers.length ? (
+            <div className="mt-4 rounded-lg border border-[var(--line)] bg-[var(--soft)] p-3">
+              <p className="text-sm font-bold text-[var(--text-soft)]">
+                This template is missing {missingRoomNumbers.length} digital room checklist
+                {missingRoomNumbers.length === 1 ? "" : "s"}.
+              </p>
+              <div className="mt-3">
+                <SecondaryButton onClick={generateMissingDigitalChecklists} disabled={digitalBusy || !db} icon={<Plus size={17} />}>
+                  {digitalBusy ? "Creating..." : "Create digital room checklists"}
+                </SecondaryButton>
+              </div>
+            </div>
+          ) : null}
+
           {selectedTemplate && roomNumbers.length ? (
             <>
               {selectedRoomNumber ? (
-                <div className="mt-4 rounded-lg border border-[var(--line)] bg-[var(--soft)] p-3 text-sm font-bold text-[var(--text-soft)]">
-                  Room {selectedRoomNumber} selected.{" "}
-                  <a
-                    href={selectedTemplate.fileUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-[var(--brand)] underline decoration-2 underline-offset-4"
-                  >
-                    Open checklist PDF
-                  </a>
+                <div className="mt-4 rounded-lg border border-[var(--line)] bg-[var(--soft)] p-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <h3 className="font-black text-[var(--text)]">Room {selectedRoomNumber} Digital PM Checklist</h3>
+                      <p className="mt-1 text-sm font-bold text-[var(--muted)]">{selectedTemplate.title}</p>
+                    </div>
+                    <Badge tone={selectedRoomChecklist?.status ?? "not_started"}>
+                      {pmRoomStatusLabels[selectedRoomChecklist?.status ?? "not_started"]}
+                    </Badge>
+                  </div>
+
+                  {selectedRoomChecklist ? (
+                    <div className="mt-4 grid gap-4">
+                      <div className="grid gap-2">
+                        {pmChecklistItems.map((item) => (
+                          <label
+                            key={item.id}
+                            className="flex items-center gap-3 rounded-lg border border-[var(--line)] bg-[var(--panel)] p-3 text-sm font-extrabold text-[var(--text)]"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={(selectedRoomChecklist.checkedItems ?? []).includes(item.id)}
+                              onChange={() => toggleSelectedRoomItem(item.id)}
+                              disabled={digitalBusy}
+                            />
+                            {item.label}
+                          </label>
+                        ))}
+                      </div>
+                      <Field label="Room PM notes">
+                        <textarea
+                          className="field min-h-24"
+                          value={roomNotesDraft}
+                          onChange={(event) => setRoomNotesDraft(event.target.value)}
+                          placeholder="Add findings, repairs needed, or completion notes"
+                        />
+                      </Field>
+                      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                        <SecondaryButton
+                          onClick={() => updateSelectedRoomStatus("in_progress")}
+                          disabled={digitalBusy}
+                          icon={<Clock size={17} />}
+                        >
+                          Mark in progress
+                        </SecondaryButton>
+                        <PrimaryButton
+                          onClick={() => updateSelectedRoomStatus("completed")}
+                          disabled={digitalBusy}
+                          icon={<Check size={17} />}
+                        >
+                          Mark complete
+                        </PrimaryButton>
+                        <SecondaryButton onClick={saveSelectedRoomNotes} disabled={digitalBusy} icon={<FileText size={17} />}>
+                          Save notes
+                        </SecondaryButton>
+                        <a
+                          href={selectedTemplate.fileUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-[var(--line)] bg-[var(--panel)] px-4 py-2.5 text-sm font-extrabold text-[var(--text)] transition hover:bg-[var(--soft)] sm:w-auto"
+                        >
+                          <FileText size={17} />
+                          Source PDF
+                        </a>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="mt-4 rounded-lg border border-[var(--line)] bg-[var(--panel)] p-3 text-sm font-bold text-[var(--text-soft)]">
+                      No digital checklist has been created for this room yet.
+                    </div>
+                  )}
                 </div>
               ) : null}
               <div className="mt-4 grid grid-cols-3 gap-2 sm:grid-cols-5 md:grid-cols-6 xl:grid-cols-8">
-                {roomNumbers.map((roomNumber) => (
-                  <button
-                    key={roomNumber}
-                    type="button"
-                    onClick={() => openRoomChecklist(roomNumber)}
-                    aria-label={`Open ${selectedTemplate.title} for room ${roomNumber}`}
-                    className={`min-h-11 rounded-lg border px-3 py-2 text-sm font-black transition ${
-                      selectedRoomNumber === roomNumber
-                        ? "border-[var(--brand)] bg-[var(--brand-soft)] text-[var(--brand)]"
-                        : "border-[var(--line)] bg-[var(--panel)] text-[var(--text)] hover:border-[var(--brand)] hover:bg-[var(--brand-soft)]"
-                    }`}
-                  >
-                    {roomNumber}
-                  </button>
-                ))}
+                {roomNumbers.map((roomNumber) => {
+                  const roomChecklist = roomChecklistMap.get(roomNumber);
+                  const status = roomChecklist?.status ?? "not_started";
+                  return (
+                    <button
+                      key={roomNumber}
+                      type="button"
+                      onClick={() => selectRoomChecklist(roomNumber)}
+                      aria-label={`Open digital PM checklist for room ${roomNumber}`}
+                      className={`min-h-14 rounded-lg border px-2 py-2 text-sm font-black transition ${
+                        selectedRoomNumber === roomNumber
+                          ? "border-[var(--brand)] bg-[var(--brand-soft)] text-[var(--brand)]"
+                          : "border-[var(--line)] bg-[var(--panel)] text-[var(--text)] hover:border-[var(--brand)] hover:bg-[var(--brand-soft)]"
+                      }`}
+                    >
+                      <span className="block">{roomNumber}</span>
+                      <span className={`mt-1 block text-[0.62rem] ${status === "completed" ? "text-[var(--brand)]" : status === "in_progress" ? "text-[var(--warning)]" : "text-[var(--muted)]"}`}>
+                        {pmRoomStatusLabels[status]}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
             </>
           ) : (
@@ -2991,7 +3189,7 @@ function PmChecklistsPanel({
               <p className="mt-1 text-sm font-medium text-[var(--muted)]">
                 {propertyTemplates.length
                   ? "Set the property's total rooms and first room number to generate room buttons."
-                  : "Upload a PM checklist PDF to generate room buttons for this property."}
+                  : "Upload a PM checklist PDF from Property Settings to generate digital room checklists."}
               </p>
             </div>
           )}
@@ -3000,7 +3198,7 @@ function PmChecklistsPanel({
         <div className="card p-4">
           <SectionTitle title="PM Checklist Templates" icon={<FileText size={20} />} />
           <p className="text-sm font-medium leading-6 text-[var(--muted)]">
-            Preventive maintenance PDFs are stored by property so technicians can open the right checklist before starting work.
+            Preventive maintenance PDFs are uploaded from Property Settings, then converted into digital room checklist records.
           </p>
         </div>
 
@@ -3060,10 +3258,23 @@ function PmChecklistsPanel({
   );
 }
 
-function PropertiesPanel({ properties, addPropertyRequest }: { properties: Property[]; addPropertyRequest: number }) {
+function PropertiesPanel({
+  profile,
+  properties,
+  templates,
+  addPropertyRequest,
+}: {
+  profile: AppUser;
+  properties: Property[];
+  templates: PmChecklistTemplate[];
+  addPropertyRequest: number;
+}) {
   const visibleProperties = properties.filter((property) => property.active !== false);
   const [editing, setEditing] = useState<Record<string, Partial<Property>>>({});
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [pmBusyId, setPmBusyId] = useState<string | null>(null);
+  const [pmUploadMessages, setPmUploadMessages] = useState<Record<string, string>>({});
+  const [pmDrafts, setPmDrafts] = useState<Record<string, { title: string; description: string; file: File | null }>>({});
   const [isAdding, setIsAdding] = useState(false);
   const [newProperty, setNewProperty] = useState({
     name: "",
@@ -3075,6 +3286,45 @@ function PropertiesPanel({ properties, addPropertyRequest }: { properties: Prope
   useEffect(() => {
     if (addPropertyRequest > 0) setIsAdding(true);
   }, [addPropertyRequest]);
+
+  const templatesByProperty = useMemo(() => {
+    const grouped: Record<string, PmChecklistTemplate[]> = {};
+    templates.forEach((template) => {
+      grouped[template.propertyId] = grouped[template.propertyId] ?? [];
+      grouped[template.propertyId].push(template);
+    });
+    Object.values(grouped).forEach((propertyTemplates) =>
+      propertyTemplates.sort((a, b) => timestampValue(b.createdAt) - timestampValue(a.createdAt)),
+    );
+    return grouped;
+  }, [templates]);
+
+  function pmDraftFor(propertyId: string) {
+    return pmDrafts[propertyId] ?? { title: "", description: "", file: null };
+  }
+
+  function updatePmDraft(propertyId: string, patch: Partial<{ title: string; description: string; file: File | null }>) {
+    setPmDrafts((current) => ({
+      ...current,
+      [propertyId]: {
+        ...(current[propertyId] ?? { title: "", description: "", file: null }),
+        ...patch,
+      },
+    }));
+  }
+
+  function effectivePropertyForRooms(property: Property) {
+    return {
+      ...property,
+      ...editing[property.id],
+      totalRooms: Number(editing[property.id]?.totalRooms ?? property.totalRooms ?? 0),
+      roomStartNumber: Number(editing[property.id]?.roomStartNumber ?? roomStartNumber(property)),
+    };
+  }
+
+  function setPmUploadMessage(propertyId: string, message: string) {
+    setPmUploadMessages((current) => ({ ...current, [propertyId]: message }));
+  }
 
   function propertyIdFromName(name: string) {
     const slug = name
@@ -3176,6 +3426,83 @@ function PropertiesPanel({ properties, addPropertyRequest }: { properties: Prope
       setIsAdding(false);
     } finally {
       setBusyId(null);
+    }
+  }
+
+  async function uploadPropertyPmChecklist(property: Property) {
+    if (!db || !storage) return;
+    const draft = pmDraftFor(property.id);
+    const pdfFile = draft.file;
+
+    if (!pdfFile) {
+      setPmUploadMessage(property.id, "Choose a PM checklist PDF before uploading.");
+      return;
+    }
+    if (pdfFile.type !== "application/pdf" && !pdfFile.name.toLowerCase().endsWith(".pdf")) {
+      setPmUploadMessage(property.id, "PM checklist templates must be PDF files.");
+      return;
+    }
+
+    const propertyForRooms = effectivePropertyForRooms(property);
+    const generatedRoomNumbers = roomNumbersForProperty(propertyForRooms);
+    if (!generatedRoomNumbers.length) {
+      setPmUploadMessage(property.id, "Set the room count before uploading a PM checklist PDF.");
+      return;
+    }
+
+    const activeDb = db;
+    const activeStorage = storage;
+    const cleanName = pdfFile.name.replace(/[^\w.-]+/g, "_");
+    const storagePath = `pmChecklists/${property.id}/templates/${Date.now()}-${cleanName}`;
+    const pdfRef = ref(activeStorage, storagePath);
+    const templateRef = doc(collection(activeDb, "pmChecklistTemplates"));
+    const templateTitle = draft.title.trim() || cleanName.replace(/\.pdf$/i, "");
+
+    setPmBusyId(property.id);
+    setPmUploadMessage(property.id, "");
+    try {
+      await uploadBytes(pdfRef, pdfFile, { contentType: "application/pdf" });
+      const fileUrl = await getDownloadURL(pdfRef);
+      const templateData = {
+        propertyId: property.id,
+        title: templateTitle,
+        description: draft.description.trim(),
+        fileName: cleanName,
+        fileUrl,
+        storagePath,
+        uploadedBy: profile.id,
+        uploadedByName: profile.name,
+        active: true,
+        digitalRoomCount: generatedRoomNumbers.length,
+        roomStartNumber: roomStartNumber(propertyForRooms),
+        roomRange: roomRangeLabel(propertyForRooms),
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      };
+
+      await setDoc(templateRef, templateData);
+      await createPmRoomChecklistRecords({
+        activeDb,
+        property: propertyForRooms,
+        template: { id: templateRef.id, ...templateData } as unknown as PmChecklistTemplate,
+        profile,
+        roomNumbers: generatedRoomNumbers,
+      });
+
+      setPmDrafts((current) => ({
+        ...current,
+        [property.id]: { title: "", description: "", file: null },
+      }));
+      setPmUploadMessage(
+        property.id,
+        `Uploaded ${templateTitle} and created ${generatedRoomNumbers.length} digital room checklist${
+          generatedRoomNumbers.length === 1 ? "" : "s"
+        }.`,
+      );
+    } catch (err) {
+      setPmUploadMessage(property.id, err instanceof Error ? err.message : "Unable to upload PM checklist PDF.");
+    } finally {
+      setPmBusyId(null);
     }
   }
 
@@ -3305,6 +3632,60 @@ function PropertiesPanel({ properties, addPropertyRequest }: { properties: Prope
                   roomStartNumber: Number(editing[property.id]?.roomStartNumber ?? property.roomStartNumber ?? 1),
                 })}
               </p>
+            </div>
+            <div className="mt-3 rounded-lg border border-[var(--line)] bg-[var(--soft)] p-3">
+              <p className="text-xs font-black uppercase tracking-wide text-[var(--brand)]">PM checklist PDF</p>
+              <p className="mt-1 text-xs font-bold text-[var(--muted)]">
+                Uploading creates a digital PM checklist for every generated room at this property.
+              </p>
+              {pmUploadMessages[property.id] ? (
+                <div className="mt-3 rounded-lg border border-[var(--line)] bg-[var(--panel)] p-3 text-xs font-bold text-[var(--text-soft)]">
+                  {pmUploadMessages[property.id]}
+                </div>
+              ) : null}
+              <div className="mt-3 grid gap-3">
+                <Field label="Checklist title">
+                  <input
+                    className="field"
+                    value={pmDraftFor(property.id).title}
+                    onChange={(event) => updatePmDraft(property.id, { title: event.target.value })}
+                    placeholder="Guest Room PM Checklist"
+                  />
+                </Field>
+                <Field label="Description">
+                  <textarea
+                    className="field min-h-20"
+                    value={pmDraftFor(property.id).description}
+                    onChange={(event) => updatePmDraft(property.id, { description: event.target.value })}
+                    placeholder="Optional notes for this checklist"
+                  />
+                </Field>
+                <Field label="Source PDF">
+                  <input
+                    className="field"
+                    type="file"
+                    accept="application/pdf,.pdf"
+                    onChange={(event) => updatePmDraft(property.id, { file: event.target.files?.[0] ?? null })}
+                  />
+                </Field>
+                {pmDraftFor(property.id).file ? (
+                  <p className="text-xs font-bold text-[var(--muted)]">{pmDraftFor(property.id).file?.name}</p>
+                ) : null}
+                <PrimaryButton
+                  onClick={() => uploadPropertyPmChecklist(property)}
+                  disabled={pmBusyId === property.id || !db || !storage}
+                  icon={<ClipboardCheck size={17} />}
+                >
+                  {pmBusyId === property.id ? "Creating..." : "Upload and create room checklists"}
+                </PrimaryButton>
+              </div>
+              {(templatesByProperty[property.id] ?? []).length ? (
+                <p className="mt-3 text-xs font-bold text-[var(--muted)]">
+                  {(templatesByProperty[property.id] ?? []).length} PM checklist template
+                  {(templatesByProperty[property.id] ?? []).length === 1 ? "" : "s"} uploaded. Latest:{" "}
+                  {(templatesByProperty[property.id] ?? [])[0]?.title}
+                </p>
+              ) : null}
             </div>
             <div className="mt-4">
               <PrimaryButton onClick={() => saveProperty(property)} disabled={busyId === property.id} icon={<Check size={17} />}>

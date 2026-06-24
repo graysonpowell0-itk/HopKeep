@@ -231,6 +231,15 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    match /pmRoomChecklists/{roomChecklistId} {
+      allow read: if propertyVisible(resource.data.propertyId);
+      allow create: if manager()
+        && request.resource.data.propertyId is string;
+      allow update: if manager()
+        || propertyAssigned(resource.data.propertyId);
+      allow delete: if false;
+    }
+
     match /pmChecklistCompletions/{completionId} {
       allow read: if propertyVisible(resource.data.propertyId);
       allow create: if active()
