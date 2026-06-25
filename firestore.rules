@@ -12,11 +12,8 @@ service cloud.firestore {
 
     function active() {
       return signedIn()
-        && (!("active" in profile().data) || profile().data.active == true)
-        && (
-          !("accountStatus" in profile().data)
-          || profile().data.accountStatus == "approved"
-        );
+        && profile().data.active != false
+        && !(profile().data.accountStatus in ["pending_admin", "pending_owner", "rejected"]);
     }
 
     function role() {
@@ -72,8 +69,18 @@ service cloud.firestore {
       ];
     }
 
+    function propertyAdmin(propertyId) {
+      return active()
+        && role() in ["property_admin", "Property Admin", "property admin"]
+        && propertyId in profile().data.assignedProperties;
+    }
+
     function propertyAssigned(propertyId) {
       return active() && propertyId in profile().data.assignedProperties;
+    }
+
+    function canManageProperty(propertyId) {
+      return manager() || propertyAdmin(propertyId);
     }
 
     function propertyVisible(propertyId) {
@@ -207,20 +214,20 @@ service cloud.firestore {
 
     match /pmChecklistTemplates/{templateId} {
       allow read: if propertyVisible(resource.data.propertyId);
-      allow create: if manager()
-        && request.resource.data.propertyId is string;
-      allow update: if manager()
-        && request.resource.data.propertyId is string
+      allow create: if request.resource.data.propertyId is string
+        && canManageProperty(request.resource.data.propertyId);
+      allow update: if request.resource.data.propertyId is string
+        && canManageProperty(resource.data.propertyId)
         && request.resource.data.propertyId == resource.data.propertyId;
       allow delete: if false;
     }
 
     match /pmChecklists/{checklistId} {
       allow read: if propertyVisible(resource.data.propertyId);
-      allow create: if manager()
-        && request.resource.data.propertyId is string;
-      allow update: if manager()
-        && request.resource.data.propertyId is string
+      allow create: if request.resource.data.propertyId is string
+        && canManageProperty(request.resource.data.propertyId);
+      allow update: if request.resource.data.propertyId is string
+        && canManageProperty(resource.data.propertyId)
         && request.resource.data.propertyId == resource.data.propertyId;
       allow delete: if false;
     }
@@ -233,9 +240,9 @@ service cloud.firestore {
 
     match /pmRoomChecklists/{roomChecklistId} {
       allow read: if propertyVisible(resource.data.propertyId);
-      allow create: if manager()
-        && request.resource.data.propertyId is string;
-      allow update: if manager()
+      allow create: if request.resource.data.propertyId is string
+        && canManageProperty(request.resource.data.propertyId);
+      allow update: if canManageProperty(resource.data.propertyId)
         || propertyAssigned(resource.data.propertyId);
       allow delete: if false;
     }

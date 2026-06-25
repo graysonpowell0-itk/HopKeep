@@ -12,11 +12,8 @@ service firebase.storage {
 
     function active() {
       return signedIn()
-        && (!("active" in profile().data) || profile().data.active == true)
-        && (
-          !("accountStatus" in profile().data)
-          || profile().data.accountStatus == "approved"
-        );
+        && profile().data.active != false
+        && !(profile().data.accountStatus in ["pending_admin", "pending_owner", "rejected"]);
     }
 
     function projectAdmin() {
@@ -41,12 +38,22 @@ service firebase.storage {
       ]);
     }
 
+    function propertyAdmin(propertyId) {
+      return active()
+        && profile().data.role in ["property_admin", "Property Admin", "property admin"]
+        && propertyId in profile().data.assignedProperties;
+    }
+
     function propertyAssigned(propertyId) {
       return active() && propertyId in profile().data.assignedProperties;
     }
 
     function propertyVisible(propertyId) {
       return manager() || propertyAssigned(propertyId);
+    }
+
+    function canManageProperty(propertyId) {
+      return manager() || propertyAdmin(propertyId);
     }
 
     function validImage() {
@@ -85,9 +92,9 @@ service firebase.storage {
       allow write: if propertyVisible(propertyId) && validImage();
     }
 
-    match /pmChecklists/{propertyId}/templates/{allPaths=**} {
+    match /pmChecklists/{propertyId}/{allPaths=**} {
       allow read: if propertyVisible(propertyId);
-      allow write: if manager() && validPdf();
+      allow write: if canManageProperty(propertyId) && validPdf();
     }
 
     match /{allPaths=**} {

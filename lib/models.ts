@@ -130,6 +130,16 @@ export type ScheduledMaintenance = {
   updatedAt?: Timestamp;
 };
 
+export type PMChecklistItem = {
+  id: string;
+  label: string;
+};
+
+export type PMChecklistRunItem = PMChecklistItem & {
+  checked: boolean;
+  notes?: string;
+};
+
 export type PmChecklistTemplate = {
   id: string;
   propertyId: string;
@@ -138,6 +148,9 @@ export type PmChecklistTemplate = {
   fileName: string;
   fileUrl: string;
   storagePath: string;
+  sourcePdfName?: string;
+  sourcePdfUrl?: string;
+  items?: PMChecklistItem[];
   uploadedBy: string;
   uploadedByName: string;
   active: boolean;
@@ -158,6 +171,7 @@ export type PmRoomChecklist = {
   storagePath: string;
   status: PmRoomChecklistStatus;
   checkedItems: string[];
+  items?: PMChecklistRunItem[];
   notes?: string;
   createdBy: string;
   createdByName: string;

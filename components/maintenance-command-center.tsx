@@ -25,6 +25,7 @@ import {
   ChevronDown,
   ChevronRight,
   ClipboardCheck,
+  ClipboardList,
   Clock,
   Download,
   DoorOpen,
@@ -54,6 +55,8 @@ import {
   type AppUser,
   type ApprovalStatus,
   type OutOfOrderIssue,
+  type PMChecklistItem,
+  type PMChecklistRunItem,
   type PmRoomChecklist,
   type PmRoomChecklistStatus,
   type PmChecklistTemplate,
@@ -312,6 +315,11 @@ const previewPmChecklistTemplates: PmChecklistTemplate[] = [
     fileName: "guest-room-pm-checklist.pdf",
     fileUrl: "#",
     storagePath: "pmChecklists/hampton_inn/templates/preview-guest-room-pm-checklist.pdf",
+    items: [
+      { id: "review_pdf", label: "Review the uploaded PM checklist PDF" },
+      { id: "inspect_room", label: "Complete the room preventive maintenance inspection" },
+      { id: "document_findings", label: "Document notes or follow-up needs" },
+    ],
     uploadedBy: "preview-admin",
     uploadedByName: "Morgan Ellis",
     active: true,
@@ -331,6 +339,11 @@ const previewPmRoomChecklists: PmRoomChecklist[] = roomNumbersForProperty(seedPr
   storagePath: "pmChecklists/hampton_inn/templates/preview-guest-room-pm-checklist.pdf",
   status: "not_started",
   checkedItems: [],
+  items: [
+    { id: "review_pdf", label: "Review the uploaded PM checklist PDF", checked: false, notes: "" },
+    { id: "inspect_room", label: "Complete the room preventive maintenance inspection", checked: false, notes: "" },
+    { id: "document_findings", label: "Document notes or follow-up needs", checked: false, notes: "" },
+  ],
   notes: "",
   createdBy: "preview-admin",
   createdByName: "Morgan Ellis",
@@ -487,7 +500,8 @@ function propertyName(properties: Property[], propertyId: string) {
 }
 
 function roomStartNumber(property: Property) {
-  return Number(property.roomStartNumber ?? property.firstRoomNumber ?? property.startingRoomNumber ?? property.roomNumberStart ?? 1);
+  const value = Number(property.roomStartNumber ?? property.firstRoomNumber ?? property.startingRoomNumber ?? property.roomNumberStart ?? 1);
+  return Number.isFinite(value) && value > 0 ? Math.floor(value) : 1;
 }
 
 function roomRangeLabel(property: Property) {
@@ -504,11 +518,106 @@ function roomNumbersForProperty(property: Property | undefined) {
   return Array.from({ length: totalRooms }, (_, index) => String(firstRoom + index));
 }
 
-const pmChecklistItems = [
+const pmChecklistItems: PMChecklistItem[] = [
   { id: "review_pdf", label: "Review the uploaded PM checklist PDF" },
   { id: "inspect_room", label: "Complete the room preventive maintenance inspection" },
   { id: "document_findings", label: "Document notes or follow-up needs" },
 ];
+
+type PdfTextChunk = {
+  str?: string;
+  transform?: number[];
+};
+
+function lineFromPdfTextChunks(chunks: PdfTextChunk[]) {
+  return chunks
+    .sort((a, b) => (a.transform?.[4] ?? 0) - (b.transform?.[4] ?? 0))
+    .map((chunk) => chunk.str?.trim() ?? "")
+    .filter(Boolean)
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizePMChecklistLine(line: string) {
+  return line
+    .replace(/^[\u2610\u2611\u2612\u25a1\u25a2\u25a3\u25a4\u25a5\u25a6\u25a7\u25a8\u25a9\u25aa\u25ab\u25fb\u25fc\u25fd\u25fe\u2b1c\u2b1b\[\]\sxX-]+/, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function buildPMChecklistItems(lines: string[]): PMChecklistItem[] {
+  const ignored = [/preventive maintenance/i, /reference guide/i, /^page \d+/i];
+  let currentSection = "";
+
+  const labels = lines.reduce<string[]>((acc, line) => {
+    const clean = normalizePMChecklistLine(line);
+    if (!clean || ignored.some((pattern) => pattern.test(clean))) return acc;
+
+    const hasCheckbox = /^[\s]*[\u2610\u2611\u2612\u25a1\u25a2\u25a3\u25a4\u25a5\u25a6\u25a7\u25a8\u25a9\u25aa\u25ab\u25fb\u25fc\u25fd\u25fe\u2b1c\u2b1b\[]/.test(line);
+    const likelySection = !hasCheckbox && clean.length < 40 && clean.split(/\s+/).length <= 4 && !/[.,;:()]/.test(clean);
+    if (likelySection) {
+      currentSection = clean;
+      return acc;
+    }
+
+    const label = currentSection && !clean.startsWith(`${currentSection}:`) ? `${currentSection}: ${clean}` : clean;
+    if (!acc.includes(label)) acc.push(label);
+    return acc;
+  }, []);
+
+  return labels.map((label, index) => ({
+    id: `item-${index + 1}`,
+    label,
+  }));
+}
+
+async function extractPMChecklistItemsFromPdf(file: File): Promise<PMChecklistItem[]> {
+  const pdfjs = await import("pdfjs-dist");
+  pdfjs.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.mjs", import.meta.url).toString();
+
+  const data = new Uint8Array(await file.arrayBuffer());
+  const pdf = await pdfjs.getDocument({ data }).promise;
+  const lines: string[] = [];
+
+  for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+    const page = await pdf.getPage(pageNumber);
+    const textContent = await page.getTextContent();
+    const rows = (textContent.items as PdfTextChunk[]).reduce<PdfTextChunk[][]>((acc, chunk) => {
+      const text = chunk.str?.trim();
+      const y = chunk.transform?.[5];
+      if (!text || typeof y !== "number") return acc;
+      const existingRow = acc.find((row) => Math.abs((row[0]?.transform?.[5] ?? 0) - y) < 3);
+      if (existingRow) existingRow.push(chunk);
+      else acc.push([chunk]);
+      return acc;
+    }, []);
+
+    rows
+      .sort((a, b) => (b[0]?.transform?.[5] ?? 0) - (a[0]?.transform?.[5] ?? 0))
+      .map(lineFromPdfTextChunks)
+      .filter(Boolean)
+      .forEach((line) => lines.push(line));
+  }
+
+  return buildPMChecklistItems(lines);
+}
+
+function roomChecklistItems(template: PmChecklistTemplate | undefined, checklist?: PmRoomChecklist): PMChecklistRunItem[] {
+  const baseItems =
+    checklist?.items?.length
+      ? checklist.items
+      : template?.items?.length
+        ? template.items.map((item) => ({ ...item, checked: false, notes: "" }))
+        : pmChecklistItems.map((item) => ({ ...item, checked: false, notes: "" }));
+  const checked = new Set(checklist?.checkedItems ?? []);
+
+  return baseItems.map((item) => ({
+    ...item,
+    checked: Boolean(item.checked || checked.has(item.id)),
+    notes: item.notes ?? "",
+  }));
+}
 
 function roomChecklistId(templateId: string, roomNumber: string) {
   return `${templateId}_${roomNumber.replace(/[^\w-]+/g, "_")}`;
@@ -528,6 +637,7 @@ async function createPmRoomChecklistRecords({
   roomNumbers?: string[];
 }) {
   const rooms = roomNumbers ?? roomNumbersForProperty(property);
+  const checklistItems = roomChecklistItems(template);
   let batch = writeBatch(activeDb);
   let queuedWrites = 0;
   const commits: Promise<void>[] = [];
@@ -553,6 +663,7 @@ async function createPmRoomChecklistRecords({
       storagePath: template.storagePath,
       status: "not_started",
       checkedItems: [],
+      items: checklistItems,
       notes: "",
       createdBy: profile.id,
       createdByName: profile.name,
@@ -863,6 +974,7 @@ export function MaintenanceCommandCenter() {
   if (!profile) return null;
 
   const navItems = getNavItems(profile.role);
+  const canManagePmUploads = profile.role === "property_manager" || profile.role === "owner";
   const mobileNavPriority: TabKey[] =
     profile.role === "technician"
       ? ["dashboard", "new-log", "my-logs", "maintenance", "pm-checklists"]
@@ -923,6 +1035,14 @@ export function MaintenanceCommandCenter() {
                     setAddPropertyRequest((request) => request + 1);
                   }}
                 />
+                <button
+                  type="button"
+                  onClick={() => setActiveTab(canManagePmUploads ? "properties" : "pm-checklists")}
+                  className="top-control inline-flex min-h-12 items-center justify-center gap-2 rounded-lg px-4 text-sm font-extrabold"
+                >
+                  {canManagePmUploads ? <ClipboardCheck size={18} /> : <ClipboardList size={18} />}
+                  {canManagePmUploads ? "Upload PM" : "PM Checklist"}
+                </button>
                 <ThemeToggle theme={theme} toggleTheme={toggleTheme} />
                 <span className="top-control inline-flex min-h-12 items-center gap-2 rounded-full px-5 py-2 text-sm font-extrabold">
                   <UserCog size={19} />
@@ -930,6 +1050,14 @@ export function MaintenanceCommandCenter() {
                 </span>
               </div>
               <div className="flex items-center gap-2 lg:hidden">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab(canManagePmUploads ? "properties" : "pm-checklists")}
+                  className="top-control inline-flex h-11 w-11 items-center justify-center rounded-lg"
+                  aria-label={canManagePmUploads ? "Open PM upload settings" : "Open PM checklist"}
+                >
+                  {canManagePmUploads ? <ClipboardCheck size={19} /> : <ClipboardList size={19} />}
+                </button>
                 <ThemeToggle theme={theme} toggleTheme={toggleTheme} compact />
                 <button
                   type="button"
@@ -1597,6 +1725,7 @@ function Dashboard({
   const outOfOrder = issues.filter((issue) => issue.status !== "closed").length;
   const due = maintenance.filter((task) => task.status !== "completed").length;
   const pendingAccounts = users.filter(isPendingUserRequest).length;
+  const canManageProperties = profile.role === "property_manager" || profile.role === "owner";
 
   return (
     <div className="space-y-5">
@@ -1654,9 +1783,13 @@ function Dashboard({
           />
           <QuickAction
             title="PM checklists"
-            text="Upload and share preventive maintenance PDF templates."
+            text={
+              canManageProperties
+                ? "Upload PDFs from Property Settings and generate digital room checklists."
+                : "Open preventive maintenance room checklists for assigned hotels."
+            }
             icon={<ClipboardCheck size={22} />}
-            onClick={() => setActiveTab("pm-checklists")}
+            onClick={() => setActiveTab(canManageProperties ? "properties" : "pm-checklists")}
           />
         </div>
       )}
@@ -2817,6 +2950,7 @@ function PmChecklistsPanel({
     return records;
   }, [propertyId, roomChecklists, selectedTemplate?.id]);
   const selectedRoomChecklist = selectedRoomNumber ? roomChecklistMap.get(selectedRoomNumber) : undefined;
+  const selectedChecklistItems = roomChecklistItems(selectedTemplate, selectedRoomChecklist);
   const missingRoomNumbers = useMemo(
     () => (selectedTemplate ? roomNumbers.filter((roomNumber) => !roomChecklistMap.has(roomNumber)) : []),
     [roomChecklistMap, roomNumbers, selectedTemplate],
@@ -2937,14 +3071,20 @@ function PmChecklistsPanel({
     if (checked.has(itemId)) checked.delete(itemId);
     else checked.add(itemId);
     const checkedItems = Array.from(checked);
+    const nextItems = selectedChecklistItems.map((item) => ({
+      ...item,
+      checked: checkedItems.includes(item.id),
+      notes: item.notes ?? "",
+    }));
     const status: PmRoomChecklistStatus =
-      checkedItems.length === 0 ? "not_started" : checkedItems.length === pmChecklistItems.length ? "completed" : "in_progress";
+      checkedItems.length === 0 ? "not_started" : checkedItems.length === selectedChecklistItems.length ? "completed" : "in_progress";
 
     setDigitalBusy(true);
     setMessage(null);
     try {
       await updateDoc(doc(activeDb, "pmRoomChecklists", selectedRoomChecklist.id), {
         checkedItems,
+        items: nextItems,
         status,
         completedBy: status === "completed" ? profile.id : null,
         completedByName: status === "completed" ? profile.name : null,
@@ -3097,14 +3237,14 @@ function PmChecklistsPanel({
                   {selectedRoomChecklist ? (
                     <div className="mt-4 grid gap-4">
                       <div className="grid gap-2">
-                        {pmChecklistItems.map((item) => (
+                        {selectedChecklistItems.map((item) => (
                           <label
                             key={item.id}
                             className="flex items-center gap-3 rounded-lg border border-[var(--line)] bg-[var(--panel)] p-3 text-sm font-extrabold text-[var(--text)]"
                           >
                             <input
                               type="checkbox"
-                              checked={(selectedRoomChecklist.checkedItems ?? []).includes(item.id)}
+                              checked={item.checked || (selectedRoomChecklist.checkedItems ?? []).includes(item.id)}
                               onChange={() => toggleSelectedRoomItem(item.id)}
                               disabled={digitalBusy}
                             />
@@ -3461,6 +3601,13 @@ function PropertiesPanel({
     setPmBusyId(property.id);
     setPmUploadMessage(property.id, "");
     try {
+      let items = pmChecklistItems;
+      try {
+        const extractedItems = await extractPMChecklistItemsFromPdf(pdfFile);
+        if (extractedItems.length) items = extractedItems;
+      } catch {
+        items = pmChecklistItems;
+      }
       await uploadBytes(pdfRef, pdfFile, { contentType: "application/pdf" });
       const fileUrl = await getDownloadURL(pdfRef);
       const templateData = {
@@ -3470,6 +3617,9 @@ function PropertiesPanel({
         fileName: cleanName,
         fileUrl,
         storagePath,
+        sourcePdfName: cleanName,
+        sourcePdfUrl: fileUrl,
+        items,
         uploadedBy: profile.id,
         uploadedByName: profile.name,
         active: true,
@@ -3495,9 +3645,9 @@ function PropertiesPanel({
       }));
       setPmUploadMessage(
         property.id,
-        `Uploaded ${templateTitle} and created ${generatedRoomNumbers.length} digital room checklist${
-          generatedRoomNumbers.length === 1 ? "" : "s"
-        }.`,
+        `Uploaded ${templateTitle}, read ${items.length} checklist item${items.length === 1 ? "" : "s"}, and created ${
+          generatedRoomNumbers.length
+        } digital room checklist${generatedRoomNumbers.length === 1 ? "" : "s"}.`,
       );
     } catch (err) {
       setPmUploadMessage(property.id, err instanceof Error ? err.message : "Unable to upload PM checklist PDF.");
