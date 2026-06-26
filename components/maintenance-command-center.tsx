@@ -45,7 +45,7 @@ import {
   Wrench,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { DependencyList, FormEvent, ReactNode } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { db, isFirebaseConfigured, storage } from "@/lib/firebase";
@@ -817,6 +817,7 @@ export function MaintenanceCommandCenter() {
   const [activeTab, setActiveTab] = useState<TabKey>("dashboard");
   const [selectedProperty, setSelectedProperty] = useState("all");
   const [addPropertyRequest, setAddPropertyRequest] = useState(0);
+  const [pmUploadRequest, setPmUploadRequest] = useState(0);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const { theme, toggleTheme } = useThemeMode();
 
@@ -989,6 +990,15 @@ export function MaintenanceCommandCenter() {
         window.location.href = "/";
       }
     : auth.logout;
+  const openPmAction = () => {
+    if (canManagePmUploads) {
+      setActiveTab("properties");
+      setPmUploadRequest((request) => request + 1);
+    } else {
+      setActiveTab("pm-checklists");
+    }
+    setMobileMenuOpen(false);
+  };
 
   return (
     <main className="app-shell min-h-screen pb-24 text-[var(--text)] lg:pb-0" data-theme={theme}>
@@ -1037,7 +1047,7 @@ export function MaintenanceCommandCenter() {
                 />
                 <button
                   type="button"
-                  onClick={() => setActiveTab(canManagePmUploads ? "properties" : "pm-checklists")}
+                  onClick={openPmAction}
                   className="top-control inline-flex min-h-12 items-center justify-center gap-2 rounded-lg px-4 text-sm font-extrabold"
                 >
                   {canManagePmUploads ? <ClipboardCheck size={18} /> : <ClipboardList size={18} />}
@@ -1052,11 +1062,12 @@ export function MaintenanceCommandCenter() {
               <div className="flex items-center gap-2 lg:hidden">
                 <button
                   type="button"
-                  onClick={() => setActiveTab(canManagePmUploads ? "properties" : "pm-checklists")}
-                  className="top-control inline-flex h-11 w-11 items-center justify-center rounded-lg"
+                  onClick={openPmAction}
+                  className="mobile-header-action top-control inline-flex h-11 items-center justify-center gap-2 rounded-lg px-3 text-xs font-extrabold"
                   aria-label={canManagePmUploads ? "Open PM upload settings" : "Open PM checklist"}
                 >
                   {canManagePmUploads ? <ClipboardCheck size={19} /> : <ClipboardList size={19} />}
+                  <span className="mobile-header-action-label">{canManagePmUploads ? "Upload PM" : "PM"}</span>
                 </button>
                 <ThemeToggle theme={theme} toggleTheme={toggleTheme} compact />
                 <button
@@ -1121,6 +1132,7 @@ export function MaintenanceCommandCenter() {
                 maintenance={visibleMaintenance}
                 users={users}
                 setActiveTab={setActiveTab}
+                openPmUploadSettings={openPmAction}
               />
             ) : null}
             {activeTab === "new-log" ? <RepairForm profile={profile} properties={activeProperties} /> : null}
@@ -1152,6 +1164,7 @@ export function MaintenanceCommandCenter() {
                 properties={properties}
                 templates={pmChecklistTemplates.filter((template) => template.active !== false)}
                 addPropertyRequest={addPropertyRequest}
+                pmUploadRequest={pmUploadRequest}
               />
             ) : null}
             {activeTab === "users" ? <UsersPanel profile={profile} users={users} properties={activeProperties} /> : null}
@@ -1570,7 +1583,7 @@ function getNavItems(role: UserRole) {
   if (role === "property_manager" || role === "owner") {
     return [
       ...admin,
-      { key: "properties" as TabKey, label: "Properties", shortLabel: "Hotels", icon: <Settings size={19} /> },
+      { key: "properties" as TabKey, label: "Properties", shortLabel: "Settings", icon: <Settings size={19} /> },
       { key: "users" as TabKey, label: "Users", shortLabel: "Users", icon: <UserCog size={19} /> },
     ];
   }
@@ -1708,6 +1721,7 @@ function Dashboard({
   maintenance,
   users,
   setActiveTab,
+  openPmUploadSettings,
 }: {
   profile: AppUser;
   properties: Property[];
@@ -1716,6 +1730,7 @@ function Dashboard({
   maintenance: ScheduledMaintenance[];
   users: AppUser[];
   setActiveTab: (tab: TabKey) => void;
+  openPmUploadSettings: () => void;
 }) {
   const pending = repairLogs.filter((log) => log.approvalStatus === "pending").length;
   const approvedToday = repairLogs.filter(
@@ -1789,7 +1804,7 @@ function Dashboard({
                 : "Open preventive maintenance room checklists for assigned hotels."
             }
             icon={<ClipboardCheck size={22} />}
-            onClick={() => setActiveTab(canManageProperties ? "properties" : "pm-checklists")}
+            onClick={() => (canManageProperties ? openPmUploadSettings() : setActiveTab("pm-checklists"))}
           />
         </div>
       )}
@@ -3403,13 +3418,16 @@ function PropertiesPanel({
   properties,
   templates,
   addPropertyRequest,
+  pmUploadRequest,
 }: {
   profile: AppUser;
   properties: Property[];
   templates: PmChecklistTemplate[];
   addPropertyRequest: number;
+  pmUploadRequest: number;
 }) {
   const visibleProperties = properties.filter((property) => property.active !== false);
+  const firstPmUploadRef = useRef<HTMLDivElement>(null);
   const [editing, setEditing] = useState<Record<string, Partial<Property>>>({});
   const [busyId, setBusyId] = useState<string | null>(null);
   const [pmBusyId, setPmBusyId] = useState<string | null>(null);
@@ -3426,6 +3444,14 @@ function PropertiesPanel({
   useEffect(() => {
     if (addPropertyRequest > 0) setIsAdding(true);
   }, [addPropertyRequest]);
+
+  useEffect(() => {
+    if (pmUploadRequest <= 0) return;
+    const timer = window.setTimeout(() => {
+      firstPmUploadRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 80);
+    return () => window.clearTimeout(timer);
+  }, [pmUploadRequest]);
 
   const templatesByProperty = useMemo(() => {
     const grouped: Record<string, PmChecklistTemplate[]> = {};
@@ -3723,7 +3749,7 @@ function PropertiesPanel({
       ) : null}
 
       <div className="grid gap-3 lg:grid-cols-3">
-        {visibleProperties.map((property) => (
+        {visibleProperties.map((property, index) => (
           <article key={property.id} className="card p-4">
             <p className="mb-3 text-xs font-black uppercase tracking-wide text-[var(--muted)]">{property.id}</p>
             <Field label="Name">
@@ -3783,7 +3809,10 @@ function PropertiesPanel({
                 })}
               </p>
             </div>
-            <div className="mt-3 rounded-lg border border-[var(--line)] bg-[var(--soft)] p-3">
+            <div
+              ref={index === 0 ? firstPmUploadRef : undefined}
+              className="mobile-pm-upload-target mt-3 rounded-lg border border-[var(--line)] bg-[var(--soft)] p-3"
+            >
               <p className="text-xs font-black uppercase tracking-wide text-[var(--brand)]">PM checklist PDF</p>
               <p className="mt-1 text-xs font-bold text-[var(--muted)]">
                 Uploading creates a digital PM checklist for every generated room at this property.

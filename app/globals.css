@@ -235,8 +235,22 @@ button {
     letter-spacing: 0.12em;
   }
 
+  .mobile-header-action {
+    max-width: 8.25rem;
+    white-space: nowrap;
+  }
+
+  .mobile-header-action-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
   .mobile-content {
     padding: 1rem 0.85rem 5.75rem;
+  }
+
+  .mobile-pm-upload-target {
+    scroll-margin-top: 8.25rem;
   }
 
   .mobile-bottom-nav {
@@ -259,6 +273,18 @@ button {
     max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+}
+
+@media (max-width: 380px) {
+  .mobile-header-action {
+    width: 2.75rem;
+    padding-left: 0;
+    padding-right: 0;
+  }
+
+  .mobile-header-action-label {
+    display: none;
   }
 }
 
