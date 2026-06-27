@@ -817,6 +817,7 @@ export function MaintenanceCommandCenter() {
   const [selectedProperty, setSelectedProperty] = useState("all");
   const [addPropertyRequest, setAddPropertyRequest] = useState(0);
   const [pmUploadRequest, setPmUploadRequest] = useState(0);
+  const contentRef = useRef<HTMLDivElement>(null);
   const { theme, toggleTheme } = useThemeMode();
 
   const propertyQuery = useMemo(() => {
@@ -979,13 +980,24 @@ export function MaintenanceCommandCenter() {
         window.location.href = "/";
       }
     : auth.logout;
-  const openPmAction = () => {
+  const revealContentOnMobile = () => {
+    if (window.innerWidth >= 1024) return;
+    window.setTimeout(() => {
+      contentRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 50);
+  };
+  const navigateToTab = (tab: TabKey, revealOnMobile = false) => {
+    setActiveTab(tab);
+    if (revealOnMobile) revealContentOnMobile();
+  };
+  const openPmAction = (revealOnMobile = false) => {
     if (canManagePmUploads) {
       setActiveTab("properties");
       setPmUploadRequest((request) => request + 1);
     } else {
       setActiveTab("pm-checklists");
     }
+    if (revealOnMobile) revealContentOnMobile();
   };
 
   return (
@@ -1017,12 +1029,12 @@ export function MaintenanceCommandCenter() {
           profile={profile}
           navItems={navItems}
           activeTab={activeTab}
-          setActiveTab={setActiveTab}
+          navigateToTab={navigateToTab}
           properties={activeProperties}
           selectedProperty={selectedProperty}
           setSelectedProperty={setSelectedProperty}
           onAddProperty={() => {
-            setActiveTab("properties");
+            navigateToTab("properties", true);
             setAddPropertyRequest((request) => request + 1);
           }}
           openPmAction={openPmAction}
@@ -1054,7 +1066,7 @@ export function MaintenanceCommandCenter() {
                 />
                 <button
                   type="button"
-                  onClick={openPmAction}
+                  onClick={() => openPmAction()}
                   className="top-control inline-flex min-h-12 items-center justify-center gap-2 rounded-lg px-4 text-sm font-extrabold"
                 >
                   {canManagePmUploads ? <ClipboardCheck size={18} /> : <ClipboardList size={18} />}
@@ -1069,7 +1081,7 @@ export function MaintenanceCommandCenter() {
             </div>
           </header>
 
-          <div className="mobile-content mx-auto max-w-7xl px-4 py-6 lg:px-8">
+          <div ref={contentRef} className="mobile-content mx-auto max-w-7xl px-4 py-6 lg:px-8">
             <ErrorStrip errors={[propertyError, repairError, issueError, scheduleError, pmChecklistError, liveUserError]} />
             {activeTab === "dashboard" ? (
               <Dashboard
@@ -1466,7 +1478,7 @@ function MobileCommandPanel({
   profile,
   navItems,
   activeTab,
-  setActiveTab,
+  navigateToTab,
   properties,
   selectedProperty,
   setSelectedProperty,
@@ -1480,12 +1492,12 @@ function MobileCommandPanel({
   profile: AppUser;
   navItems: ReturnType<typeof getNavItems>;
   activeTab: TabKey;
-  setActiveTab: (tab: TabKey) => void;
+  navigateToTab: (tab: TabKey, revealOnMobile?: boolean) => void;
   properties: Property[];
   selectedProperty: string;
   setSelectedProperty: (property: string) => void;
   onAddProperty: () => void;
-  openPmAction: () => void;
+  openPmAction: (revealOnMobile?: boolean) => void;
   theme: ThemeMode;
   toggleTheme: () => void;
   handleLogout: () => void;
@@ -1528,7 +1540,7 @@ function MobileCommandPanel({
           />
           <button
             type="button"
-            onClick={openPmAction}
+            onClick={() => openPmAction(true)}
             className="top-control inline-flex min-h-11 items-center justify-center gap-2 rounded-lg px-3 text-sm font-extrabold"
           >
             {canManagePmUploads ? <ClipboardCheck size={18} /> : <ClipboardList size={18} />}
@@ -1539,7 +1551,7 @@ function MobileCommandPanel({
 
         <nav className="mobile-command-nav" aria-label="Main navigation">
           {navItems.map((item) => (
-            <NavButton key={item.key} item={item} active={activeTab === item.key} onClick={() => setActiveTab(item.key)} />
+            <NavButton key={item.key} item={item} active={activeTab === item.key} onClick={() => navigateToTab(item.key, true)} />
           ))}
         </nav>
 
@@ -1550,7 +1562,7 @@ function MobileCommandPanel({
           </div>
           <button
             type="button"
-            onClick={() => setActiveTab("profile")}
+            onClick={() => navigateToTab("profile", true)}
             className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-[var(--line)] bg-[var(--panel)] px-3 text-sm font-extrabold text-[var(--text)] transition hover:bg-[var(--soft)]"
           >
             <UserCog size={17} />
