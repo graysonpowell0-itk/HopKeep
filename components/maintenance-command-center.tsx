@@ -34,7 +34,6 @@ import {
   Home,
   ImagePlus,
   LogOut,
-  Menu,
   Moon,
   Plus,
   Search,
@@ -818,7 +817,6 @@ export function MaintenanceCommandCenter() {
   const [selectedProperty, setSelectedProperty] = useState("all");
   const [addPropertyRequest, setAddPropertyRequest] = useState(0);
   const [pmUploadRequest, setPmUploadRequest] = useState(0);
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const { theme, toggleTheme } = useThemeMode();
 
   const propertyQuery = useMemo(() => {
@@ -976,15 +974,6 @@ export function MaintenanceCommandCenter() {
 
   const navItems = getNavItems(profile.role);
   const canManagePmUploads = profile.role === "property_manager" || profile.role === "owner";
-  const mobileNavPriority: TabKey[] =
-    profile.role === "technician"
-      ? ["dashboard", "new-log", "my-logs", "maintenance", "pm-checklists"]
-      : profile.role === "property_manager" || profile.role === "owner"
-        ? ["dashboard", "approvals", "out-of-order", "pm-checklists", "properties"]
-        : ["dashboard", "approvals", "out-of-order", "daily-log", "pm-checklists"];
-  const mobileNavItems = mobileNavPriority
-    .map((key) => navItems.find((item) => item.key === key))
-    .filter((item): item is ReturnType<typeof getNavItems>[number] => Boolean(item));
   const handleLogout = adminPreview
     ? () => {
         window.location.href = "/";
@@ -997,11 +986,10 @@ export function MaintenanceCommandCenter() {
     } else {
       setActiveTab("pm-checklists");
     }
-    setMobileMenuOpen(false);
   };
 
   return (
-    <main className="app-shell min-h-screen pb-24 text-[var(--text)] lg:pb-0" data-theme={theme}>
+    <main className="app-shell min-h-screen text-[var(--text)]" data-theme={theme}>
       <div className="lg:flex">
         <aside className="sticky top-0 hidden h-screen w-72 border-r border-[var(--line)] bg-[var(--panel)] px-4 py-5 lg:block">
           <AppLogo />
@@ -1025,8 +1013,27 @@ export function MaintenanceCommandCenter() {
           </button>
         </aside>
 
+        <MobileCommandPanel
+          profile={profile}
+          navItems={navItems}
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          properties={activeProperties}
+          selectedProperty={selectedProperty}
+          setSelectedProperty={setSelectedProperty}
+          onAddProperty={() => {
+            setActiveTab("properties");
+            setAddPropertyRequest((request) => request + 1);
+          }}
+          openPmAction={openPmAction}
+          theme={theme}
+          toggleTheme={toggleTheme}
+          handleLogout={handleLogout}
+          canManagePmUploads={canManagePmUploads}
+        />
+
         <section className="min-w-0 flex-1">
-          <header className="mobile-app-header sticky top-0 z-20 border-b border-[var(--line)] bg-[var(--background-translucent)] px-4 py-4 backdrop-blur lg:px-8">
+          <header className="sticky top-0 z-20 hidden border-b border-[var(--line)] bg-[var(--background-translucent)] px-4 py-4 backdrop-blur lg:block lg:px-8">
             <div className="mx-auto flex max-w-7xl items-center justify-between gap-3">
               <div className="min-w-0">
                 <p className="mobile-page-kicker text-xs font-black uppercase tracking-[0.18em] text-[var(--brand)]">HopKeep Command Center</p>
@@ -1059,66 +1066,7 @@ export function MaintenanceCommandCenter() {
                   {roleLabels[profile.role]}
                 </span>
               </div>
-              <div className="flex items-center gap-2 lg:hidden">
-                <button
-                  type="button"
-                  onClick={openPmAction}
-                  className="mobile-header-action top-control inline-flex h-11 items-center justify-center gap-2 rounded-lg px-3 text-xs font-extrabold"
-                  aria-label={canManagePmUploads ? "Open PM upload settings" : "Open PM checklist"}
-                >
-                  {canManagePmUploads ? <ClipboardCheck size={19} /> : <ClipboardList size={19} />}
-                  <span className="mobile-header-action-label">{canManagePmUploads ? "Upload PM" : "PM"}</span>
-                </button>
-                <ThemeToggle theme={theme} toggleTheme={toggleTheme} compact />
-                <button
-                  type="button"
-                  onClick={() => setMobileMenuOpen((open) => !open)}
-                  className="top-control inline-flex h-11 w-11 items-center justify-center rounded-lg"
-                  aria-label="Open menu"
-                >
-                  <Menu size={20} />
-                </button>
-              </div>
             </div>
-            <div className="mx-auto mt-3 max-w-7xl lg:hidden">
-              <PropertySelector
-                profile={profile}
-                properties={activeProperties}
-                selectedProperty={selectedProperty}
-                setSelectedProperty={setSelectedProperty}
-                onAddProperty={() => {
-                  setActiveTab("properties");
-                  setAddPropertyRequest((request) => request + 1);
-                }}
-              />
-            </div>
-            {mobileMenuOpen ? (
-              <div className="mt-3 grid gap-2 rounded-lg border border-[var(--line)] bg-[var(--panel)] p-2 shadow-[var(--shadow)] lg:hidden">
-                {navItems.map((item) => (
-                  <NavButton
-                    key={item.key}
-                    item={item}
-                    active={activeTab === item.key}
-                    onClick={() => {
-                      setActiveTab(item.key);
-                      setMobileMenuOpen(false);
-                    }}
-                  />
-                ))}
-                <SecondaryButton
-                  icon={<UserCog size={18} />}
-                  onClick={() => {
-                    setActiveTab("profile");
-                    setMobileMenuOpen(false);
-                  }}
-                >
-                  Profile settings
-                </SecondaryButton>
-                <SecondaryButton icon={<LogOut size={18} />} onClick={handleLogout}>
-                  Sign out
-                </SecondaryButton>
-              </div>
-            ) : null}
           </header>
 
           <div className="mobile-content mx-auto max-w-7xl px-4 py-6 lg:px-8">
@@ -1172,24 +1120,6 @@ export function MaintenanceCommandCenter() {
           </div>
         </section>
       </div>
-
-      <nav className="mobile-bottom-nav fixed bottom-0 left-0 right-0 z-30 border-t border-[var(--line)] bg-[var(--panel)] safe-bottom lg:hidden" aria-label="Mobile navigation">
-        <div className="mobile-bottom-nav-grid">
-          {mobileNavItems.map((item) => (
-            <button
-              key={item.key}
-              type="button"
-              onClick={() => setActiveTab(item.key)}
-              className={`mobile-nav-button flex min-w-0 flex-col items-center justify-center gap-1 rounded-lg text-[0.68rem] font-black ${
-                activeTab === item.key ? "bg-[var(--brand-soft)] text-[var(--brand)]" : "text-[var(--muted)]"
-              }`}
-            >
-              {item.icon}
-              <span className="mobile-nav-label whitespace-nowrap">{item.shortLabel}</span>
-            </button>
-          ))}
-        </div>
-      </nav>
     </main>
   );
 }
@@ -1529,6 +1459,114 @@ function BrandBlock({ profile, onOpenProfile }: { profile: AppUser; onOpenProfil
         Profile settings
       </button>
     </div>
+  );
+}
+
+function MobileCommandPanel({
+  profile,
+  navItems,
+  activeTab,
+  setActiveTab,
+  properties,
+  selectedProperty,
+  setSelectedProperty,
+  onAddProperty,
+  openPmAction,
+  theme,
+  toggleTheme,
+  handleLogout,
+  canManagePmUploads,
+}: {
+  profile: AppUser;
+  navItems: ReturnType<typeof getNavItems>;
+  activeTab: TabKey;
+  setActiveTab: (tab: TabKey) => void;
+  properties: Property[];
+  selectedProperty: string;
+  setSelectedProperty: (property: string) => void;
+  onAddProperty: () => void;
+  openPmAction: () => void;
+  theme: ThemeMode;
+  toggleTheme: () => void;
+  handleLogout: () => void;
+  canManagePmUploads: boolean;
+}) {
+  return (
+    <aside className="mobile-command-panel border-b border-[var(--line)] bg-[var(--panel)] px-4 py-4 lg:hidden">
+      <div className="mobile-command-inner mx-auto grid max-w-7xl gap-3">
+        <div className="mobile-command-brand-row">
+          <HopKeepLogo className="mobile-command-logo w-[5.75rem] max-w-full" />
+          <div className="min-w-0">
+            <p className="text-[0.68rem] font-black uppercase tracking-[0.16em] text-[var(--brand)]">HopKeep Command Center</p>
+            <h1 className="mt-1 text-xl font-black leading-tight text-[var(--text)]">
+              {navItems.find((item) => item.key === activeTab)?.label ?? "Dashboard"}
+            </h1>
+          </div>
+        </div>
+
+        <div className="mobile-profile-card rounded-lg border border-[var(--line)] bg-[var(--soft)] p-3">
+          <div className="flex items-center gap-3">
+            <UserAvatar profile={profile} />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-black text-[var(--text)]">{profile.name}</p>
+              <p className="truncate text-xs font-bold text-[var(--muted)]">{profile.email}</p>
+            </div>
+            <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-[var(--brand-soft)] px-2.5 py-1.5 text-[0.68rem] font-black text-[var(--brand)]">
+              <ShieldCheck size={13} />
+              {roleLabels[profile.role]}
+            </span>
+          </div>
+        </div>
+
+        <div className="mobile-command-controls">
+          <PropertySelector
+            profile={profile}
+            properties={properties}
+            selectedProperty={selectedProperty}
+            setSelectedProperty={setSelectedProperty}
+            onAddProperty={onAddProperty}
+          />
+          <button
+            type="button"
+            onClick={openPmAction}
+            className="top-control inline-flex min-h-11 items-center justify-center gap-2 rounded-lg px-3 text-sm font-extrabold"
+          >
+            {canManagePmUploads ? <ClipboardCheck size={18} /> : <ClipboardList size={18} />}
+            {canManagePmUploads ? "Upload PM" : "PM Checklist"}
+          </button>
+          <ThemeToggle theme={theme} toggleTheme={toggleTheme} />
+        </div>
+
+        <nav className="mobile-command-nav" aria-label="Main navigation">
+          {navItems.map((item) => (
+            <NavButton key={item.key} item={item} active={activeTab === item.key} onClick={() => setActiveTab(item.key)} />
+          ))}
+        </nav>
+
+        <div className="mobile-command-footer">
+          <div className="rounded-lg border border-[var(--line)] bg-[var(--soft)] p-3">
+            <p className="text-xs font-black uppercase tracking-[0.14em] text-[var(--brand)]">Shift status</p>
+            <p className="mt-1 text-sm font-extrabold text-[var(--text)]">Live property records</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setActiveTab("profile")}
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-[var(--line)] bg-[var(--panel)] px-3 text-sm font-extrabold text-[var(--text)] transition hover:bg-[var(--soft)]"
+          >
+            <UserCog size={17} />
+            Profile
+          </button>
+          <button
+            type="button"
+            onClick={handleLogout}
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-[var(--line)] bg-[var(--panel)] px-3 text-sm font-extrabold text-[var(--text)] transition hover:bg-[var(--soft)]"
+          >
+            <LogOut size={17} />
+            Sign out
+          </button>
+        </div>
+      </div>
+    </aside>
   );
 }
 
