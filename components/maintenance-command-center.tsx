@@ -315,9 +315,11 @@ const previewPmChecklistTemplates: PmChecklistTemplate[] = [
     fileUrl: "#",
     storagePath: "pmChecklists/hampton_inn/templates/preview-guest-room-pm-checklist.pdf",
     items: [
-      { id: "review_pdf", label: "Review the uploaded PM checklist PDF" },
-      { id: "inspect_room", label: "Complete the room preventive maintenance inspection" },
-      { id: "document_findings", label: "Document notes or follow-up needs" },
+      { id: "item-1", label: "Inspect PTAC/HVAC filter and clean or replace as needed" },
+      { id: "item-2", label: "Test smoke detector, emergency lighting, and safety devices" },
+      { id: "item-3", label: "Check plumbing fixtures for leaks, drainage, and water pressure" },
+      { id: "item-4", label: "Inspect doors, locks, latches, windows, and hardware operation" },
+      { id: "item-5", label: "Document any repairs, parts, or follow-up work needed" },
     ],
     uploadedBy: "preview-admin",
     uploadedByName: "Morgan Ellis",
@@ -339,9 +341,11 @@ const previewPmRoomChecklists: PmRoomChecklist[] = roomNumbersForProperty(seedPr
   status: "not_started",
   checkedItems: [],
   items: [
-    { id: "review_pdf", label: "Review the uploaded PM checklist PDF", checked: false, notes: "" },
-    { id: "inspect_room", label: "Complete the room preventive maintenance inspection", checked: false, notes: "" },
-    { id: "document_findings", label: "Document notes or follow-up needs", checked: false, notes: "" },
+    { id: "item-1", label: "Inspect PTAC/HVAC filter and clean or replace as needed", checked: false, notes: "" },
+    { id: "item-2", label: "Test smoke detector, emergency lighting, and safety devices", checked: false, notes: "" },
+    { id: "item-3", label: "Check plumbing fixtures for leaks, drainage, and water pressure", checked: false, notes: "" },
+    { id: "item-4", label: "Inspect doors, locks, latches, windows, and hardware operation", checked: false, notes: "" },
+    { id: "item-5", label: "Document any repairs, parts, or follow-up work needed", checked: false, notes: "" },
   ],
   notes: "",
   createdBy: "preview-admin",
@@ -518,10 +522,31 @@ function roomNumbersForProperty(property: Property | undefined) {
 }
 
 const pmChecklistItems: PMChecklistItem[] = [
-  { id: "review_pdf", label: "Review the uploaded PM checklist PDF" },
-  { id: "inspect_room", label: "Complete the room preventive maintenance inspection" },
-  { id: "document_findings", label: "Document notes or follow-up needs" },
+  { id: "item-1", label: "Inspect PTAC/HVAC filter and clean or replace as needed" },
+  { id: "item-2", label: "Test smoke detector, emergency lighting, and safety devices" },
+  { id: "item-3", label: "Check plumbing fixtures for leaks, drainage, and water pressure" },
+  { id: "item-4", label: "Inspect doors, locks, latches, windows, and hardware operation" },
+  { id: "item-5", label: "Check furniture, fixtures, walls, flooring, and guest-room finishes" },
+  { id: "item-6", label: "Document any repairs, parts, or follow-up work needed" },
 ];
+
+function checklistItemsFromText(text: string, idPrefix = "item"): PMChecklistItem[] {
+  const labels = text
+    .split(/\r?\n/)
+    .map((line) =>
+      line
+        .replace(/^\s*(?:[-*\u2022]|\d+[.)]|[A-Za-z][.)])\s+/, "")
+        .replace(/\s+/g, " ")
+        .trim(),
+    )
+    .filter(Boolean)
+    .filter((label, index, all) => all.indexOf(label) === index);
+
+  return labels.map((label, index) => ({
+    id: `${idPrefix}-${index + 1}`,
+    label,
+  }));
+}
 
 type PdfTextChunk = {
   str?: string;
@@ -1821,7 +1846,7 @@ function Dashboard({
           />
           <QuickAction
             title="PM checklists"
-            text="Open preventive maintenance PDF templates for assigned hotels."
+            text="Open digital preventive maintenance checklists for assigned hotels."
             icon={<ClipboardCheck size={22} />}
             onClick={() => setActiveTab("pm-checklists")}
           />
@@ -1850,7 +1875,7 @@ function Dashboard({
             title="PM checklists"
             text={
               canManageProperties
-                ? "Upload PDFs from Property Settings and generate digital room checklists."
+                ? "Create digital room checklists from Property Settings."
                 : "Open preventive maintenance room checklists for assigned hotels."
             }
             icon={<ClipboardCheck size={22} />}
@@ -3223,7 +3248,7 @@ function PmChecklistsPanel({
                     </option>
                   ))
                 ) : (
-                  <option value="">No PM checklist uploaded</option>
+                  <option value="">No digital PM checklist created</option>
                 )}
               </select>
             </Field>
@@ -3301,6 +3326,12 @@ function PmChecklistsPanel({
 
                   {selectedRoomChecklist ? (
                     <div className="mt-4 grid gap-4">
+                      <div className="rounded-lg border border-[var(--line)] bg-[var(--panel)] p-3">
+                        <p className="text-xs font-black uppercase tracking-wide text-[var(--brand)]">Interactive checklist</p>
+                        <p className="mt-1 text-sm font-bold text-[var(--text-soft)]">
+                          Check off each digital PM item for room {selectedRoomChecklist.roomNumber}.
+                        </p>
+                      </div>
                       <div className="grid gap-2">
                         {selectedChecklistItems.map((item) => (
                           <label
@@ -3343,15 +3374,17 @@ function PmChecklistsPanel({
                         <SecondaryButton onClick={saveSelectedRoomNotes} disabled={digitalBusy} icon={<FileText size={17} />}>
                           Save notes
                         </SecondaryButton>
-                        <a
-                          href={selectedTemplate.fileUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-[var(--line)] bg-[var(--panel)] px-4 py-2.5 text-sm font-extrabold text-[var(--text)] transition hover:bg-[var(--soft)] sm:w-auto"
-                        >
-                          <FileText size={17} />
-                          Source PDF
-                        </a>
+                        {selectedTemplate.fileUrl ? (
+                          <a
+                            href={selectedTemplate.fileUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-[var(--line)] bg-[var(--panel)] px-4 py-2.5 text-sm font-extrabold text-[var(--text)] transition hover:bg-[var(--soft)] sm:w-auto"
+                          >
+                            <FileText size={17} />
+                            Reference PDF
+                          </a>
+                        ) : null}
                       </div>
                     </div>
                   ) : (
@@ -3394,16 +3427,16 @@ function PmChecklistsPanel({
               <p className="mt-1 text-sm font-medium text-[var(--muted)]">
                 {propertyTemplates.length
                   ? "Set the property's total rooms and first room number to generate room buttons."
-                  : "Upload a PM checklist PDF from Property Settings to generate digital room checklists."}
+                  : "Create a digital PM checklist from Property Settings to generate room checklists."}
               </p>
             </div>
           )}
         </div>
 
         <div className="card p-4">
-          <SectionTitle title="PM Checklist Templates" icon={<FileText size={20} />} />
+          <SectionTitle title="Digital PM Checklist Templates" icon={<ClipboardCheck size={20} />} />
           <p className="text-sm font-medium leading-6 text-[var(--muted)]">
-            Preventive maintenance PDFs are uploaded from Property Settings, then converted into digital room checklist records.
+            Digital checklist items are created for every room. Source PDFs can be attached as references.
           </p>
         </div>
 
@@ -3422,33 +3455,56 @@ function PmChecklistsPanel({
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
                             <h3 className="font-black text-[var(--text)]">{template.title}</h3>
-                            <Badge tone="scheduled">PDF</Badge>
+                            <Badge tone="approved">Digital</Badge>
                           </div>
                           <p className="mt-1 text-sm font-bold text-[var(--muted)]">
-                            {template.fileName} - uploaded by {template.uploadedByName || "Admin"}
+                            {(template.items ?? []).length || pmChecklistItems.length} interactive item
+                            {((template.items ?? []).length || pmChecklistItems.length) === 1 ? "" : "s"}
+                            {template.fileUrl ? ` - source ${template.fileName}` : " - no PDF required"}
                           </p>
                         </div>
                         <p className="text-xs font-bold text-[var(--muted)]">{formatShortDate(template.createdAt)}</p>
                       </div>
                       {template.description ? <TextBlock label="Notes" text={template.description} /> : null}
+                      <div className="mt-4 rounded-lg border border-[var(--line)] bg-[var(--soft)] p-3">
+                        <p className="text-xs font-black uppercase tracking-wide text-[var(--brand)]">Digital checklist items</p>
+                        <ul className="mt-2 grid gap-2 text-sm font-bold text-[var(--text-soft)]">
+                          {(template.items?.length ? template.items : pmChecklistItems).slice(0, 5).map((item) => (
+                            <li key={item.id} className="flex gap-2">
+                              <Check size={15} className="mt-0.5 shrink-0 text-[var(--brand)]" />
+                              <span>{item.label}</span>
+                            </li>
+                          ))}
+                        </ul>
+                        {(template.items?.length ?? pmChecklistItems.length) > 5 ? (
+                          <p className="mt-2 text-xs font-bold text-[var(--muted)]">
+                            +{(template.items?.length ?? pmChecklistItems.length) - 5} more digital item
+                            {(template.items?.length ?? pmChecklistItems.length) - 5 === 1 ? "" : "s"}
+                          </p>
+                        ) : null}
+                      </div>
                       <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:justify-end">
-                        <a
-                          href={template.fileUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-[var(--line)] bg-[var(--panel)] px-4 py-2.5 text-sm font-extrabold text-[var(--text)] transition hover:bg-[var(--soft)] sm:w-auto"
-                        >
-                          <FileText size={17} />
-                          Open PDF
-                        </a>
-                        <a
-                          href={template.fileUrl}
-                          download={template.fileName}
-                          className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-[var(--line)] bg-[var(--panel)] px-4 py-2.5 text-sm font-extrabold text-[var(--text)] transition hover:bg-[var(--soft)] sm:w-auto"
-                        >
-                          <Download size={17} />
-                          Download
-                        </a>
+                        {template.fileUrl ? (
+                          <>
+                            <a
+                              href={template.fileUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-[var(--line)] bg-[var(--panel)] px-4 py-2.5 text-sm font-extrabold text-[var(--text)] transition hover:bg-[var(--soft)] sm:w-auto"
+                            >
+                              <FileText size={17} />
+                              Reference PDF
+                            </a>
+                            <a
+                              href={template.fileUrl}
+                              download={template.fileName}
+                              className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-[var(--line)] bg-[var(--panel)] px-4 py-2.5 text-sm font-extrabold text-[var(--text)] transition hover:bg-[var(--soft)] sm:w-auto"
+                            >
+                              <Download size={17} />
+                              Download reference
+                            </a>
+                          </>
+                        ) : null}
                       </div>
                     </article>
                   ))}
@@ -3456,7 +3512,7 @@ function PmChecklistsPanel({
               </div>
             ))
         ) : (
-          <EmptyState title="No PM checklists" text="Uploaded preventive maintenance PDFs will appear here by property." />
+          <EmptyState title="No PM checklists" text="Digital preventive maintenance checklists will appear here by property." />
         )}
       </section>
     </div>
@@ -3482,7 +3538,9 @@ function PropertiesPanel({
   const [busyId, setBusyId] = useState<string | null>(null);
   const [pmBusyId, setPmBusyId] = useState<string | null>(null);
   const [pmUploadMessages, setPmUploadMessages] = useState<Record<string, string>>({});
-  const [pmDrafts, setPmDrafts] = useState<Record<string, { title: string; description: string; file: File | null }>>({});
+  const [pmDrafts, setPmDrafts] = useState<
+    Record<string, { title: string; description: string; itemsText: string; file: File | null }>
+  >({});
   const [isAdding, setIsAdding] = useState(false);
   const [newProperty, setNewProperty] = useState({
     name: "",
@@ -3516,14 +3574,17 @@ function PropertiesPanel({
   }, [templates]);
 
   function pmDraftFor(propertyId: string) {
-    return pmDrafts[propertyId] ?? { title: "", description: "", file: null };
+    return pmDrafts[propertyId] ?? { title: "", description: "", itemsText: "", file: null };
   }
 
-  function updatePmDraft(propertyId: string, patch: Partial<{ title: string; description: string; file: File | null }>) {
+  function updatePmDraft(
+    propertyId: string,
+    patch: Partial<{ title: string; description: string; itemsText: string; file: File | null }>,
+  ) {
     setPmDrafts((current) => ({
       ...current,
       [propertyId]: {
-        ...(current[propertyId] ?? { title: "", description: "", file: null }),
+        ...(current[propertyId] ?? { title: "", description: "", itemsText: "", file: null }),
         ...patch,
       },
     }));
@@ -3646,54 +3707,66 @@ function PropertiesPanel({
   }
 
   async function uploadPropertyPmChecklist(property: Property) {
-    if (!db || !storage) return;
+    if (!db) return;
     const draft = pmDraftFor(property.id);
     const pdfFile = draft.file;
+    const manualItems = checklistItemsFromText(draft.itemsText, "manual-item");
 
-    if (!pdfFile) {
-      setPmUploadMessage(property.id, "Choose a PM checklist PDF before uploading.");
+    if (!pdfFile && !manualItems.length) {
+      setPmUploadMessage(property.id, "Enter digital checklist items or choose a reference PDF before creating room checklists.");
       return;
     }
-    if (pdfFile.type !== "application/pdf" && !pdfFile.name.toLowerCase().endsWith(".pdf")) {
-      setPmUploadMessage(property.id, "PM checklist templates must be PDF files.");
+    if (pdfFile && pdfFile.type !== "application/pdf" && !pdfFile.name.toLowerCase().endsWith(".pdf")) {
+      setPmUploadMessage(property.id, "Reference files must be PDF files.");
+      return;
+    }
+    if (pdfFile && !storage) {
+      setPmUploadMessage(property.id, "Firebase Storage is not configured, so the reference PDF cannot be saved.");
       return;
     }
 
     const propertyForRooms = effectivePropertyForRooms(property);
     const generatedRoomNumbers = roomNumbersForProperty(propertyForRooms);
     if (!generatedRoomNumbers.length) {
-      setPmUploadMessage(property.id, "Set the room count before uploading a PM checklist PDF.");
+      setPmUploadMessage(property.id, "Set the room count before creating digital room checklists.");
       return;
     }
 
     const activeDb = db;
     const activeStorage = storage;
-    const cleanName = pdfFile.name.replace(/[^\w.-]+/g, "_");
-    const storagePath = `pmChecklists/${property.id}/templates/${Date.now()}-${cleanName}`;
-    const pdfRef = ref(activeStorage, storagePath);
+    const cleanName = pdfFile?.name.replace(/[^\w.-]+/g, "_") ?? "";
+    const storagePath = pdfFile ? `pmChecklists/${property.id}/templates/${Date.now()}-${cleanName}` : "";
+    const pdfRef = pdfFile && activeStorage ? ref(activeStorage, storagePath) : null;
     const templateRef = doc(collection(activeDb, "pmChecklistTemplates"));
-    const templateTitle = draft.title.trim() || cleanName.replace(/\.pdf$/i, "");
+    const templateTitle = draft.title.trim() || cleanName.replace(/\.pdf$/i, "") || "Guest Room PM Checklist";
 
     setPmBusyId(property.id);
     setPmUploadMessage(property.id, "");
     try {
-      let items = pmChecklistItems;
-      try {
-        const extractedItems = await extractPMChecklistItemsFromPdf(pdfFile);
-        if (extractedItems.length) items = extractedItems;
-      } catch {
-        items = pmChecklistItems;
+      let items = manualItems.length ? manualItems : pmChecklistItems;
+      let itemSource = manualItems.length ? "the digital checklist items you entered" : "starter PM checklist items";
+
+      if (!manualItems.length && pdfFile) {
+        try {
+          const extractedItems = await extractPMChecklistItemsFromPdf(pdfFile);
+          if (extractedItems.length) {
+            items = extractedItems;
+            itemSource = "the checklist rows read from the PDF";
+          }
+        } catch {
+          items = pmChecklistItems;
+        }
       }
-      await uploadBytes(pdfRef, pdfFile, { contentType: "application/pdf" });
-      const fileUrl = await getDownloadURL(pdfRef);
+      if (pdfRef && pdfFile) await uploadBytes(pdfRef, pdfFile, { contentType: "application/pdf" });
+      const fileUrl = pdfRef ? await getDownloadURL(pdfRef) : "";
       const templateData = {
         propertyId: property.id,
         title: templateTitle,
         description: draft.description.trim(),
-        fileName: cleanName,
+        fileName: cleanName || "No reference PDF",
         fileUrl,
         storagePath,
-        sourcePdfName: cleanName,
+        sourcePdfName: cleanName || "",
         sourcePdfUrl: fileUrl,
         items,
         uploadedBy: profile.id,
@@ -3717,16 +3790,16 @@ function PropertiesPanel({
 
       setPmDrafts((current) => ({
         ...current,
-        [property.id]: { title: "", description: "", file: null },
+        [property.id]: { title: "", description: "", itemsText: "", file: null },
       }));
       setPmUploadMessage(
         property.id,
-        `Uploaded ${templateTitle}, read ${items.length} checklist item${items.length === 1 ? "" : "s"}, and created ${
-          generatedRoomNumbers.length
-        } digital room checklist${generatedRoomNumbers.length === 1 ? "" : "s"}.`,
+        `Created ${generatedRoomNumbers.length} digital room checklist${
+          generatedRoomNumbers.length === 1 ? "" : "s"
+        } for ${templateTitle} using ${items.length} item${items.length === 1 ? "" : "s"} from ${itemSource}.`,
       );
     } catch (err) {
-      setPmUploadMessage(property.id, err instanceof Error ? err.message : "Unable to upload PM checklist PDF.");
+      setPmUploadMessage(property.id, err instanceof Error ? err.message : "Unable to create digital PM checklist.");
     } finally {
       setPmBusyId(null);
     }
@@ -3863,9 +3936,9 @@ function PropertiesPanel({
               ref={index === 0 ? firstPmUploadRef : undefined}
               className="mobile-pm-upload-target mt-3 rounded-lg border border-[var(--line)] bg-[var(--soft)] p-3"
             >
-              <p className="text-xs font-black uppercase tracking-wide text-[var(--brand)]">PM checklist PDF</p>
+              <p className="text-xs font-black uppercase tracking-wide text-[var(--brand)]">Digital PM checklist</p>
               <p className="mt-1 text-xs font-bold text-[var(--muted)]">
-                Uploading creates a digital PM checklist for every generated room at this property.
+                Create interactive checklist items for every generated room. The PDF is kept as the source reference.
               </p>
               {pmUploadMessages[property.id] ? (
                 <div className="mt-3 rounded-lg border border-[var(--line)] bg-[var(--panel)] p-3 text-xs font-bold text-[var(--text-soft)]">
@@ -3889,7 +3962,18 @@ function PropertiesPanel({
                     placeholder="Optional notes for this checklist"
                   />
                 </Field>
-                <Field label="Source PDF">
+                <Field label="Digital checklist items">
+                  <textarea
+                    className="field min-h-32"
+                    value={pmDraftFor(property.id).itemsText}
+                    onChange={(event) => updatePmDraft(property.id, { itemsText: event.target.value })}
+                    placeholder={"One item per line, for example:\nInspect PTAC filter\nTest smoke detector\nCheck plumbing fixtures"}
+                  />
+                </Field>
+                <p className="text-xs font-bold leading-5 text-[var(--muted)]">
+                  If this is blank, HopKeep will try to read checklist rows from the PDF. If the PDF cannot be read, it will create a starter digital PM checklist.
+                </p>
+                <Field label="Reference PDF (optional)">
                   <input
                     className="field"
                     type="file"
@@ -3902,10 +3986,10 @@ function PropertiesPanel({
                 ) : null}
                 <PrimaryButton
                   onClick={() => uploadPropertyPmChecklist(property)}
-                  disabled={pmBusyId === property.id || !db || !storage}
+                  disabled={pmBusyId === property.id || !db}
                   icon={<ClipboardCheck size={17} />}
                 >
-                  {pmBusyId === property.id ? "Creating..." : "Upload and create room checklists"}
+                  {pmBusyId === property.id ? "Creating..." : "Create digital room checklists"}
                 </PrimaryButton>
               </div>
               {(templatesByProperty[property.id] ?? []).length ? (
