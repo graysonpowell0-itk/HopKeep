@@ -133,6 +133,11 @@ export type ScheduledMaintenance = {
 export type PMChecklistItem = {
   id: string;
   label: string;
+  section?: string;
+  group?: string;
+  kind?: "checkbox" | "text";
+  emphasis?: boolean;
+  placeholder?: string;
 };
 
 export type PMChecklistRunItem = PMChecklistItem & {

@@ -109,6 +109,443 @@ const pmRoomStatusLabels: Record<PmRoomChecklistStatus, string> = {
   completed: "Completed",
 };
 
+type PMReferenceChecklistGroup = {
+  title?: string;
+  items: string[];
+};
+
+type PMReferenceChecklistSection = {
+  title: string;
+  introItems?: string[];
+  groups?: PMReferenceChecklistGroup[];
+  textRows?: {
+    label: string;
+    count: number;
+    placeholder: string;
+  };
+};
+
+const pmReferenceChecklistSections: PMReferenceChecklistSection[] = [
+  {
+    title: "Entry",
+    groups: [
+      {
+        title: "Entry Door",
+        items: [
+          "Door and door frame",
+          "Frame silencers, smoke seal, intumescent fire strips, door sweeps, and doorstop (ensure they are in place)",
+          "Closure and closer operation (back swing, swing, and latch operation - adjust as needed to meet Hilton Brand Standard; ensure door automatically latches closed at 8\" and 30\" opening position)",
+          "Deadbolt/night-latch",
+          "Knob, strike plate, and hinges",
+          "Lock (condition, operation, battery strength, Bluetooth operation, Digital Key Health)",
+          "Room number",
+          "Evacuation/innkeeper plaque",
+          "Viewer/cover",
+        ],
+      },
+      {
+        title: "Entry Threshold",
+        items: [
+          "Floor tile/carpet",
+          "Baseboard",
+          "Wall finish",
+          "Ceiling finish",
+          "Hallway light (ensure proper Kelvin rating and wattage, replace with LED bulb per Brand Standards as necessary)",
+          "Doorbell & DND light",
+        ],
+      },
+      {
+        title: "Connecting Doors",
+        items: [
+          "Door and door frame",
+          "Sound seal, smoke seal and door sweeps",
+          "Knobs, strike plates and hinges, lock and deadbolt/night-latch",
+        ],
+      },
+      {
+        title: "Closet",
+        items: [
+          "Wall and ceiling finish",
+          "Door and door frame",
+          "Door frame silencers, smoke seal, door sweeps and doorstop (ensure they are in place as well); door tracks",
+          "Light (ensure proper Kelvin rating and wattage, replace with LED bulb per Brand Standards as necessary)",
+          "Rod, rod hook and shelf",
+          "Iron board/steamer holder",
+          "Safe (including battery strength; replace battery annually)",
+          "Luggage rack",
+        ],
+      },
+    ],
+  },
+  {
+    title: "Bathroom",
+    introItems: ["Check the condition and operation of the following as applicable to your property, and repair minor deficiencies."],
+    groups: [
+      {
+        title: "General",
+        items: [
+          "Ceiling",
+          "Wall paint/vinyl",
+          "Floor tile and grout",
+          "Exhaust fan or vent (clean the grille and/or duct)",
+          "Light switch",
+          "Light (ensure proper Kelvin rating and wattage, replace with LED bulb per Brand Standards as necessary)",
+          "GFCI electrical outlet and cover (perform test)",
+          "Towel racks",
+          "Robe hook/clothesline",
+          "Artwork",
+          "Hot water (test at the shower/tub and vanity faucet to verify water temperature reaches 122\u00b0F/45\u00b0C in one minute or less; maximum threshold temperature is 126\u00b0F/52.2\u00b0C)",
+        ],
+      },
+      {
+        title: "Bathroom Door",
+        items: [
+          "Door, door frame and door stop (including sound seal)",
+          "Threshold",
+          "Knobs, strike plate and hinges",
+          "Lock",
+          "Hinge pins (lubricate if needed using white lithium grease or graphite-based lubricant)",
+        ],
+      },
+      {
+        title: "Bathroom Barn or Pocket Door",
+        items: ["Barn/pocket door", "Door stop", "Track assembly"],
+      },
+      {
+        title: "Shower/Bathtub",
+        items: [
+          "Surface (including anti-slip)",
+          "Tile and grout",
+          "Caulk",
+          "Drain and overflow (check, clean and treat)",
+          "Valve, cover plate and decals",
+          "Diverter/tub spout, valve and cover",
+          "Shower head, shower arm and escutcheon plate (check and sanitize)",
+          "Soap dish and bulk amenities brackets",
+          "Grab bars",
+          "Curtain and rod",
+          "ADA handheld shower device (as applicable)",
+          "Door and handle (ensure glass door rollers, guides, seals and stops are in place)",
+          "Door gasket/seal (ensure proper fall toward shower pan)",
+        ],
+      },
+      {
+        title: "Jacuzzi",
+        items: [
+          "Jacuzzi (ensure there are no leaks)",
+          "Caulk",
+          "Drain (check, clean and treat)",
+          "Faucet and lever",
+          "Jets (clean and test function to ensure clean water)",
+        ],
+      },
+      {
+        title: "Toilet",
+        items: [
+          "Toilet (ensure it flushes properly, maintains proper water level in bowl and is leak-free)",
+          "Tank (ensure the tank is not leaking into bowl, adjust the fill valve and replace flush valve flapper if necessary)",
+          "Lid/seat (also check tightness; slow close if applicable)",
+          "Bolts and caps (ensure caps are secure and in place)",
+          "Flush handle/dual flush",
+          "Stop valve and supply line",
+          "Toilet paper holder (check tightness)",
+        ],
+      },
+      {
+        title: "Vanity and Sink Area",
+        items: [
+          "All surfaces and tops",
+          "Sink bowl",
+          "Caulk",
+          "Base, cabinet doors, dividers, and hinges (check tightness)",
+          "Faucet (ensure handles are in the correct position with hot on the left and cold on the right, and that the sink does not leak)",
+          "Faucet aerator (check and sanitize)",
+          "Drain (ensure the drain removes water from the sink quickly)",
+          "Drain stopper (ensure stopper works properly and seals water in bowl)",
+          "P-trap assembly (ensure there are no visible signs of leaks, rust, etc. ADA pipe wrap, if applicable)",
+          "Stop valves and supply lines",
+          "Mirror (check for chips, cracks, delamination or discoloration, and demister path*)",
+          "Light (ensure proper color and wattage)",
+          "Makeup mirror",
+        ],
+      },
+    ],
+  },
+  {
+    title: "Bedroom",
+    groups: [
+      {
+        title: "General",
+        items: [
+          "Ceiling",
+          "Wall paint/vinyl",
+          "Baseboard and crown molding",
+          "Carpet (check for stains, tears, frays, tightness)",
+          "Hard surface floors (damaged or discolored)",
+          "Wall-mounted lighting (ensure proper color and wattage)",
+          "Light switch/control (ensure master switch operation)",
+          "Mirror/artwork",
+          "Window treatment/drapes (pull rods; ensure full blackout)",
+          "Safe",
+          "Wet bar areas, appliances (mini fridge, microwave, coffee maker, etc.)",
+          "All electrical and USB outlets (test)",
+        ],
+      },
+      {
+        title: "Nightstand and Bed Area",
+        items: [
+          "Nightstands (check drawer operation)",
+          "Lamps and shades (ensure proper color and wattage lamps are in place and proper cord management)",
+          "Telephone (ensure correct room number and decal and proper cord management)",
+          "Time clock/radio (ensure the correct time and replace the battery annually, if applicable)",
+          "Bed and bedframe (check tightness)",
+          "Bed headboard (ensure it's properly secured to the wall)",
+          "Bedside electrical and USB outlets",
+        ],
+      },
+      {
+        title: "Desk Area",
+        items: [
+          "Desk",
+          "Desk chair",
+          "Electrical and USB outlets",
+          "Telephone (ensure correct room number and decals and proper cord management)",
+          "Lamp and shades (ensure proper color and wattage lamps are in place and proper cord management)",
+          "High-speed internet (check signal level)",
+        ],
+      },
+      {
+        title: "Lounge and Television Area",
+        items: [
+          "Lounge chair/sofa",
+          "Ottoman, footstool, and coffee table",
+          "Standing lamp and shades (ensure proper color and wattage lamps are in place and proper cord management)",
+          "TV cabinet/dresser (check drawers, doors, and hinges)",
+          "TV wall mount/stand (check tightness)",
+          "TV (picture quality, menu functions and channels line up)",
+          "TV cable cord (check tightness and cord management)",
+          "TV remote control",
+        ],
+      },
+      {
+        title: "Armoire/Cabinet/Closet",
+        items: ["Drawers, doors, and hinges", "Rod, rod hook, and shelf", "Iron board/steamer holder", "Luggage rack"],
+      },
+    ],
+  },
+  {
+    title: "HVAC",
+    groups: [
+      {
+        title: "General",
+        items: [
+          "Exterior cover/access panel (clean, check condition, operation and tightness; replace missing screws)",
+          "Supply and return grille (clean, check condition, tightness and ensure directional fins are in the proper position)",
+        ],
+      },
+      {
+        title: "Interior Cabinet",
+        items: [
+          "Properly lockout/tagout the unit",
+          "Vacuum and remove any dirt from the interior using proper attachments",
+          "Insulation (inspect and repair if damaged or missing)",
+          "Electrical wires (inspect all and repair if loose)",
+          "ELCB/RCCB or equal ground fault devices (test trip button in electrical panel)*",
+        ],
+      },
+      {
+        title: "Fan Assembly",
+        items: [
+          "Remove the fan assembly and clean the motor exterior, fan blades, and assembly, if applicable",
+          "Properly lubricate the motor, if applicable (per the manufacturer's recommendations)",
+          "Cooling/heating coil",
+          "Clean and sanitize the coils (per the manufacturer's recommendations)",
+          "Ensure all the blades are in good condition and are properly aligned",
+          "Replace the air filter with a Merv 8-rated filter; write the date of installation on the filter.",
+          "Exercise shut-off valve",
+        ],
+      },
+      {
+        title: "Cooling/Heating Control Valve",
+        items: ["Ensure the actuator opens and closes on demand"],
+      },
+      {
+        title: "Condensation Drain and Drain Pan",
+        items: [
+          "Thoroughly clean the pan and drain line (per the manufacturer's recommendation)",
+          "Install drain tabs or strips into the drain pan (per the manufacturer's recommendation)",
+          "Check for clogs and leaks",
+          "Check for damaged or missing insulation (repair or replace as necessary).",
+          "Check the float switch",
+        ],
+      },
+      {
+        title: "Supplemental Electric Heat",
+        items: [
+          "Clean element (per the manufacturer's recommendations)",
+          "Check the condition and operation",
+          "Ensure the correct position of the high-temperature limit cutoff sensor",
+        ],
+      },
+      {
+        title: "Outside Air Damper",
+        items: ["Check the condition and operation"],
+      },
+      {
+        title: "Thermostat",
+        items: [
+          "Cooling sequence of operation",
+          "Heating sequence of operation",
+          "Dehumidification cycle sequence of operation",
+          "Ensure the fan properly modulates between low and medium speeds (per the Hilton Brand Standard sequence of operation)",
+          "Entry door switch (replace battery annually)",
+          "Balcony/lanai door switch (replace battery annually)",
+        ],
+      },
+      {
+        title: "Supply and Return Air Temperature - Cooling Mode",
+        items: [
+          "Adjust the thermostat to call for cooling",
+          "Measure and document the supply and return air temperature at the grilles",
+          "There should be a difference in temperature of 10\u00b0F to 15\u00b0F/5.5\u00b0C to 8.3\u00b0C",
+        ],
+      },
+      {
+        title: "Supply and Return Air Temperature - Heating Mode",
+        items: [
+          "Adjust the thermostat to call for heating",
+          "Measure and document the supply and return air temperature at the grilles",
+          "There should be a difference in temperature of 10\u00b0F to 15\u00b0F/5.5\u00b0C to 8.3\u00b0C",
+        ],
+      },
+    ],
+  },
+  {
+    title: "Fire, Life & Safety",
+    groups: [
+      {
+        title: "ADA Devices",
+        items: ["Ensure proper ADA devices are in place (replace if missing)"],
+      },
+      {
+        title: "Smoke/Heat Detectors",
+        items: [
+          "Perform test on smoke detector as required by code or Brand Standards; document results",
+          "Perform test on device as required by code or Brand Standards; document results",
+          "Replace batteries annually (not applicable if smoke detectors have a sealed 10-year lithium-ion battery)",
+          "Replace smoke detector if necessary",
+        ],
+      },
+      {
+        title: "Speaker and Strobe",
+        items: ["Ensure speaker and strobe are in proper place (replace if missing)"],
+      },
+      {
+        title: "Sprinkler Head",
+        items: [
+          "Ensure the sprinkler head is not dirty, corroded or has any paint on head (replace if necessary)",
+          "Check that a proper protection cage is installed",
+          "Check that the proper warning sign/sticker is installed correctly",
+        ],
+      },
+      {
+        title: "Carbon Monoxide Detector",
+        items: ["Perform test on carbon monoxide detector as required by code or Brand Standards; document result"],
+      },
+      {
+        title: "Refrigerant Monitor Device",
+        items: ["Perform test on device as required by code or Brand Standards; document the result"],
+      },
+    ],
+  },
+  {
+    title: "Property-Specific Features",
+    textRows: {
+      label: "Property-specific feature",
+      count: 7,
+      placeholder: "Describe the property-specific feature inspected",
+    },
+  },
+  {
+    title: "Required Follow-Up Actions",
+    textRows: {
+      label: "Required follow-up action",
+      count: 6,
+      placeholder: "Describe the action, part, or repair needed",
+    },
+  },
+];
+
+function checklistIdPart(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 64);
+}
+
+function buildReferenceChecklistItems() {
+  const items: PMChecklistItem[] = [];
+
+  function pushItem({
+    section,
+    group,
+    label,
+    emphasis = false,
+    kind = "checkbox",
+    placeholder,
+  }: {
+    section: string;
+    group?: string;
+    label: string;
+    emphasis?: boolean;
+    kind?: PMChecklistItem["kind"];
+    placeholder?: string;
+  }) {
+    const item: PMChecklistItem = {
+      id: `pm-${items.length + 1}-${checklistIdPart(`${section}-${group ?? ""}-${label}`)}`,
+      label,
+      section,
+      kind,
+    };
+    if (group) item.group = group;
+    if (emphasis) item.emphasis = true;
+    if (placeholder) item.placeholder = placeholder;
+    items.push(item);
+  }
+
+  pmReferenceChecklistSections.forEach((section) => {
+    section.introItems?.forEach((label) => pushItem({ section: section.title, label }));
+    section.groups?.forEach((group) => {
+      if (group.title) pushItem({ section: section.title, group: group.title, label: group.title, emphasis: true });
+      group.items.forEach((label) => pushItem({ section: section.title, group: group.title, label }));
+    });
+    const textRows = section.textRows;
+    if (textRows) {
+      Array.from({ length: textRows.count }, (_, index) => {
+        pushItem({
+          section: section.title,
+          label: `${textRows.label} ${index + 1}`,
+          kind: "text",
+          placeholder: textRows.placeholder,
+        });
+      });
+    }
+  });
+
+  return items;
+}
+
+const pmChecklistItems: PMChecklistItem[] = buildReferenceChecklistItems();
+const legacyStarterPmLabels = [
+  "Inspect PTAC/HVAC filter and clean or replace as needed",
+  "Test smoke detector, emergency lighting, and safety devices",
+  "Check plumbing fixtures for leaks, drainage, and water pressure",
+  "Inspect doors, locks, latches, windows, and hardware operation",
+  "Check furniture, fixtures, walls, flooring, and guest-room finishes",
+  "Document any repairs, parts, or follow-up work needed",
+];
+
 function previewTimestamp(isoDate: string) {
   const millis = Date.parse(isoDate);
   return {
@@ -314,13 +751,7 @@ const previewPmChecklistTemplates: PmChecklistTemplate[] = [
     fileName: "guest-room-pm-checklist.pdf",
     fileUrl: "#",
     storagePath: "pmChecklists/hampton_inn/templates/preview-guest-room-pm-checklist.pdf",
-    items: [
-      { id: "item-1", label: "Inspect PTAC/HVAC filter and clean or replace as needed" },
-      { id: "item-2", label: "Test smoke detector, emergency lighting, and safety devices" },
-      { id: "item-3", label: "Check plumbing fixtures for leaks, drainage, and water pressure" },
-      { id: "item-4", label: "Inspect doors, locks, latches, windows, and hardware operation" },
-      { id: "item-5", label: "Document any repairs, parts, or follow-up work needed" },
-    ],
+    items: pmChecklistItems,
     uploadedBy: "preview-admin",
     uploadedByName: "Morgan Ellis",
     active: true,
@@ -340,13 +771,7 @@ const previewPmRoomChecklists: PmRoomChecklist[] = roomNumbersForProperty(seedPr
   storagePath: "pmChecklists/hampton_inn/templates/preview-guest-room-pm-checklist.pdf",
   status: "not_started",
   checkedItems: [],
-  items: [
-    { id: "item-1", label: "Inspect PTAC/HVAC filter and clean or replace as needed", checked: false, notes: "" },
-    { id: "item-2", label: "Test smoke detector, emergency lighting, and safety devices", checked: false, notes: "" },
-    { id: "item-3", label: "Check plumbing fixtures for leaks, drainage, and water pressure", checked: false, notes: "" },
-    { id: "item-4", label: "Inspect doors, locks, latches, windows, and hardware operation", checked: false, notes: "" },
-    { id: "item-5", label: "Document any repairs, parts, or follow-up work needed", checked: false, notes: "" },
-  ],
+  items: pmChecklistItems.map((item) => ({ ...item, checked: false, notes: "" })),
   notes: "",
   createdBy: "preview-admin",
   createdByName: "Morgan Ellis",
@@ -521,15 +946,6 @@ function roomNumbersForProperty(property: Property | undefined) {
   return Array.from({ length: totalRooms }, (_, index) => String(firstRoom + index));
 }
 
-const pmChecklistItems: PMChecklistItem[] = [
-  { id: "item-1", label: "Inspect PTAC/HVAC filter and clean or replace as needed" },
-  { id: "item-2", label: "Test smoke detector, emergency lighting, and safety devices" },
-  { id: "item-3", label: "Check plumbing fixtures for leaks, drainage, and water pressure" },
-  { id: "item-4", label: "Inspect doors, locks, latches, windows, and hardware operation" },
-  { id: "item-5", label: "Check furniture, fixtures, walls, flooring, and guest-room finishes" },
-  { id: "item-6", label: "Document any repairs, parts, or follow-up work needed" },
-];
-
 function checklistItemsFromText(text: string, idPrefix = "item"): PMChecklistItem[] {
   const labels = text
     .split(/\r?\n/)
@@ -627,13 +1043,49 @@ async function extractPMChecklistItemsFromPdf(file: File): Promise<PMChecklistIt
   return buildPMChecklistItems(lines);
 }
 
+function checklistItemsAreLegacyStarter(items: Pick<PMChecklistItem, "label">[] | undefined) {
+  if (!items?.length || items.length > legacyStarterPmLabels.length) return false;
+  const legacyLabels = new Set(legacyStarterPmLabels);
+  return items.every((item) => legacyLabels.has(item.label));
+}
+
+function extractionLooksLikePMReferenceGuide(items: PMChecklistItem[]) {
+  const labels = items.map((item) => item.label.toLowerCase()).join("\n");
+  return (
+    labels.includes("entry door") &&
+    labels.includes("bathroom door") &&
+    labels.includes("nightstand and bed area") &&
+    labels.includes("thermostat") &&
+    labels.includes("fire, life") &&
+    labels.includes("property-specific features")
+  );
+}
+
+function templateChecklistItems(template: PmChecklistTemplate | undefined) {
+  const items = template?.items ?? [];
+  if (!items.length || checklistItemsAreLegacyStarter(items)) return pmChecklistItems;
+  return items;
+}
+
+function groupChecklistItems<T extends PMChecklistItem>(items: T[]) {
+  return items.reduce<Array<{ title: string; items: T[] }>>((sections, item) => {
+    const title = item.section ?? "Checklist";
+    const current = sections[sections.length - 1];
+    if (current?.title === title) {
+      current.items.push(item);
+    } else {
+      sections.push({ title, items: [item] });
+    }
+    return sections;
+  }, []);
+}
+
 function roomChecklistItems(template: PmChecklistTemplate | undefined, checklist?: PmRoomChecklist): PMChecklistRunItem[] {
+  const templateItems = templateChecklistItems(template);
   const baseItems =
-    checklist?.items?.length
+    checklist?.items?.length && !checklistItemsAreLegacyStarter(checklist.items)
       ? checklist.items
-      : template?.items?.length
-        ? template.items.map((item) => ({ ...item, checked: false, notes: "" }))
-        : pmChecklistItems.map((item) => ({ ...item, checked: false, notes: "" }));
+      : templateItems.map((item) => ({ ...item, checked: false, notes: "" }));
   const checked = new Set(checklist?.checkedItems ?? []);
 
   return baseItems.map((item) => ({
@@ -3002,6 +3454,7 @@ function PmChecklistsPanel({
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [selectedRoomNumber, setSelectedRoomNumber] = useState("");
   const [roomNotesDraft, setRoomNotesDraft] = useState("");
+  const [itemNotesDrafts, setItemNotesDrafts] = useState<Record<string, string>>({});
   const [digitalBusy, setDigitalBusy] = useState(false);
   const [roomSettingsBusy, setRoomSettingsBusy] = useState(false);
   const [roomSettings, setRoomSettings] = useState({ totalRooms: 0, roomStartNumber: 1 });
@@ -3041,6 +3494,7 @@ function PmChecklistsPanel({
   }, [propertyId, roomChecklists, selectedTemplate?.id]);
   const selectedRoomChecklist = selectedRoomNumber ? roomChecklistMap.get(selectedRoomNumber) : undefined;
   const selectedChecklistItems = roomChecklistItems(selectedTemplate, selectedRoomChecklist);
+  const selectedChecklistSections = groupChecklistItems(selectedChecklistItems);
   const missingRoomNumbers = useMemo(
     () => (selectedTemplate ? roomNumbers.filter((roomNumber) => !roomChecklistMap.has(roomNumber)) : []),
     [roomChecklistMap, roomNumbers, selectedTemplate],
@@ -3076,6 +3530,16 @@ function PmChecklistsPanel({
   useEffect(() => {
     setRoomNotesDraft(selectedRoomChecklist?.notes ?? "");
   }, [selectedRoomChecklist?.id, selectedRoomChecklist?.notes]);
+
+  useEffect(() => {
+    setItemNotesDrafts(
+      selectedChecklistItems.reduce<Record<string, string>>((drafts, item) => {
+        if (item.kind === "text") drafts[item.id] = item.notes ?? "";
+        return drafts;
+      }, {}),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedRoomChecklist?.id]);
 
   function selectRoomChecklist(roomNumber: string) {
     setSelectedRoomNumber(roomNumber);
@@ -3136,11 +3600,16 @@ function PmChecklistsPanel({
   async function updateSelectedRoomStatus(status: PmRoomChecklistStatus) {
     if (!db || !selectedRoomChecklist) return;
     const activeDb = db;
+    const nextItems = selectedChecklistItems.map((item) => ({
+      ...item,
+      notes: item.kind === "text" ? itemNotesDrafts[item.id] ?? item.notes ?? "" : item.notes ?? "",
+    }));
     setDigitalBusy(true);
     setMessage(null);
     try {
       await updateDoc(doc(activeDb, "pmRoomChecklists", selectedRoomChecklist.id), {
         status,
+        items: nextItems,
         completedBy: status === "completed" ? profile.id : null,
         completedByName: status === "completed" ? profile.name : null,
         completedAt: status === "completed" ? serverTimestamp() : null,
@@ -3164,7 +3633,7 @@ function PmChecklistsPanel({
     const nextItems = selectedChecklistItems.map((item) => ({
       ...item,
       checked: checkedItems.includes(item.id),
-      notes: item.notes ?? "",
+      notes: item.kind === "text" ? itemNotesDrafts[item.id] ?? item.notes ?? "" : item.notes ?? "",
     }));
     const status: PmRoomChecklistStatus =
       checkedItems.length === 0 ? "not_started" : checkedItems.length === selectedChecklistItems.length ? "completed" : "in_progress";
@@ -3191,12 +3660,22 @@ function PmChecklistsPanel({
   async function saveSelectedRoomNotes() {
     if (!db || !selectedRoomChecklist) return;
     const activeDb = db;
+    const nextItems = selectedChecklistItems.map((item) => ({
+      ...item,
+      notes: item.kind === "text" ? itemNotesDrafts[item.id] ?? item.notes ?? "" : item.notes ?? "",
+    }));
+    const hasItemNotes = nextItems.some((item) => item.kind === "text" && (item.notes ?? "").trim());
+    const status =
+      selectedRoomChecklist.status === "not_started" && (roomNotesDraft.trim() || hasItemNotes)
+        ? "in_progress"
+        : selectedRoomChecklist.status;
     setDigitalBusy(true);
     setMessage(null);
     try {
       await updateDoc(doc(activeDb, "pmRoomChecklists", selectedRoomChecklist.id), {
         notes: roomNotesDraft.trim(),
-        status: selectedRoomChecklist.status === "not_started" ? "in_progress" : selectedRoomChecklist.status,
+        items: nextItems,
+        status,
         updatedAt: serverTimestamp(),
       });
       setMessage(`Room ${selectedRoomChecklist.roomNumber} notes saved.`);
@@ -3329,23 +3808,56 @@ function PmChecklistsPanel({
                       <div className="rounded-lg border border-[var(--line)] bg-[var(--panel)] p-3">
                         <p className="text-xs font-black uppercase tracking-wide text-[var(--brand)]">Interactive checklist</p>
                         <p className="mt-1 text-sm font-bold text-[var(--text-soft)]">
-                          Check off each digital PM item for room {selectedRoomChecklist.roomNumber}.
+                          Complete the digital PM reference guide for room {selectedRoomChecklist.roomNumber}.
                         </p>
                       </div>
-                      <div className="grid gap-2">
-                        {selectedChecklistItems.map((item) => (
-                          <label
-                            key={item.id}
-                            className="flex items-center gap-3 rounded-lg border border-[var(--line)] bg-[var(--panel)] p-3 text-sm font-extrabold text-[var(--text)]"
-                          >
-                            <input
-                              type="checkbox"
-                              checked={item.checked || (selectedRoomChecklist.checkedItems ?? []).includes(item.id)}
-                              onChange={() => toggleSelectedRoomItem(item.id)}
-                              disabled={digitalBusy}
-                            />
-                            {item.label}
-                          </label>
+                      <div className="grid gap-4">
+                        {selectedChecklistSections.map((section) => (
+                          <section key={section.title} className="overflow-hidden rounded-lg border border-[var(--line)] bg-[var(--panel)]">
+                            <div className="border-b border-[var(--line)] bg-[var(--soft)] px-3 py-2.5">
+                              <h4 className="text-sm font-black text-[var(--text)]">{section.title}</h4>
+                            </div>
+                            <div className="divide-y divide-[var(--line)]">
+                              {section.items.map((item) => {
+                                const checked = item.checked || (selectedRoomChecklist.checkedItems ?? []).includes(item.id);
+                                const isTextItem = item.kind === "text";
+                                return (
+                                  <div
+                                    key={item.id}
+                                    className={`flex items-start gap-3 px-3 py-2.5 text-sm text-[var(--text)] ${
+                                      item.emphasis ? "bg-[var(--soft)] font-black" : "font-semibold"
+                                    }`}
+                                  >
+                                    <input
+                                      className="mt-1 h-4 w-4 shrink-0"
+                                      type="checkbox"
+                                      checked={checked}
+                                      onChange={() => toggleSelectedRoomItem(item.id)}
+                                      disabled={digitalBusy}
+                                      aria-label={`Mark ${item.label} complete`}
+                                    />
+                                    <div className="min-w-0 flex-1">
+                                      <p className={item.emphasis ? "font-black" : ""}>{item.label}</p>
+                                      {isTextItem ? (
+                                        <input
+                                          className="mt-2 w-full border-0 border-b border-[var(--line)] bg-transparent px-0 py-2 text-sm font-semibold text-[var(--text)] outline-none placeholder:text-[var(--muted)] focus:border-[var(--brand)]"
+                                          value={itemNotesDrafts[item.id] ?? ""}
+                                          onChange={(event) =>
+                                            setItemNotesDrafts((current) => ({
+                                              ...current,
+                                              [item.id]: event.target.value,
+                                            }))
+                                          }
+                                          placeholder={item.placeholder ?? "Add details"}
+                                          disabled={digitalBusy}
+                                        />
+                                      ) : null}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </section>
                         ))}
                       </div>
                       <Field label="Room PM notes">
@@ -3449,7 +3961,9 @@ function PmChecklistsPanel({
                   {propertyName(properties, templatePropertyId)}
                 </h3>
                 <div className="grid gap-3">
-                  {propertyTemplates.map((template) => (
+                  {propertyTemplates.map((template) => {
+                    const templateItems = templateChecklistItems(template);
+                    return (
                     <article key={template.id} className="card p-4">
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                         <div className="min-w-0">
@@ -3458,8 +3972,8 @@ function PmChecklistsPanel({
                             <Badge tone="approved">Digital</Badge>
                           </div>
                           <p className="mt-1 text-sm font-bold text-[var(--muted)]">
-                            {(template.items ?? []).length || pmChecklistItems.length} interactive item
-                            {((template.items ?? []).length || pmChecklistItems.length) === 1 ? "" : "s"}
+                            {templateItems.length} interactive item
+                            {templateItems.length === 1 ? "" : "s"}
                             {template.fileUrl ? ` - source ${template.fileName}` : " - no PDF required"}
                           </p>
                         </div>
@@ -3469,17 +3983,17 @@ function PmChecklistsPanel({
                       <div className="mt-4 rounded-lg border border-[var(--line)] bg-[var(--soft)] p-3">
                         <p className="text-xs font-black uppercase tracking-wide text-[var(--brand)]">Digital checklist items</p>
                         <ul className="mt-2 grid gap-2 text-sm font-bold text-[var(--text-soft)]">
-                          {(template.items?.length ? template.items : pmChecklistItems).slice(0, 5).map((item) => (
+                          {templateItems.slice(0, 5).map((item) => (
                             <li key={item.id} className="flex gap-2">
                               <Check size={15} className="mt-0.5 shrink-0 text-[var(--brand)]" />
-                              <span>{item.label}</span>
+                              <span>{item.section ? `${item.section}: ${item.label}` : item.label}</span>
                             </li>
                           ))}
                         </ul>
-                        {(template.items?.length ?? pmChecklistItems.length) > 5 ? (
+                        {templateItems.length > 5 ? (
                           <p className="mt-2 text-xs font-bold text-[var(--muted)]">
-                            +{(template.items?.length ?? pmChecklistItems.length) - 5} more digital item
-                            {(template.items?.length ?? pmChecklistItems.length) - 5 === 1 ? "" : "s"}
+                            +{templateItems.length - 5} more digital item
+                            {templateItems.length - 5 === 1 ? "" : "s"}
                           </p>
                         ) : null}
                       </div>
@@ -3507,7 +4021,8 @@ function PmChecklistsPanel({
                         ) : null}
                       </div>
                     </article>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             ))
@@ -3744,17 +4259,18 @@ function PropertiesPanel({
     setPmUploadMessage(property.id, "");
     try {
       let items = manualItems.length ? manualItems : pmChecklistItems;
-      let itemSource = manualItems.length ? "the digital checklist items you entered" : "starter PM checklist items";
+      let itemSource = manualItems.length ? "the digital checklist items you entered" : "the full PM reference guide form";
 
       if (!manualItems.length && pdfFile) {
         try {
           const extractedItems = await extractPMChecklistItemsFromPdf(pdfFile);
-          if (extractedItems.length) {
+          if (extractedItems.length && !extractionLooksLikePMReferenceGuide(extractedItems)) {
             items = extractedItems;
             itemSource = "the checklist rows read from the PDF";
           }
         } catch {
           items = pmChecklistItems;
+          itemSource = "the full PM reference guide form";
         }
       }
       if (pdfRef && pdfFile) await uploadBytes(pdfRef, pdfFile, { contentType: "application/pdf" });
@@ -3962,7 +4478,7 @@ function PropertiesPanel({
                     placeholder="Optional notes for this checklist"
                   />
                 </Field>
-                <Field label="Digital checklist items">
+                <Field label="Custom digital checklist items (optional)">
                   <textarea
                     className="field min-h-32"
                     value={pmDraftFor(property.id).itemsText}
@@ -3971,7 +4487,7 @@ function PropertiesPanel({
                   />
                 </Field>
                 <p className="text-xs font-bold leading-5 text-[var(--muted)]">
-                  If this is blank, HopKeep will try to read checklist rows from the PDF. If the PDF cannot be read, it will create a starter digital PM checklist.
+                  Leave this blank to create the full Guest Room/Suite PM reference guide as a digital checklist from the source PDF.
                 </p>
                 <Field label="Reference PDF (optional)">
                   <input
